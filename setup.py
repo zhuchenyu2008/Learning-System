@@ -1,0 +1,37 @@
+from setuptools import find_packages, setup
+
+setup(
+    name="learning-system-backend",
+    version="0.1.0",
+    description="Backend foundation for learning-system",
+    package_dir={"": "backend"},
+    packages=find_packages(where="backend"),
+    install_requires=[
+        "fastapi>=0.115,<1.0",
+        "uvicorn[standard]>=0.30,<1.0",
+        "sqlalchemy>=2.0,<3.0",
+        "aiosqlite>=0.20,<1.0",
+        "asyncpg>=0.29,<1.0",
+        "alembic>=1.13,<2.0",
+        "pydantic>=2.8,<3.0",
+        "pydantic-settings>=2.4,<3.0",
+        "python-jose[cryptography]>=3.3,<4.0",
+        "passlib[bcrypt]>=1.7,<2.0",
+        "bcrypt>=4.0,<4.1",
+        "python-multipart>=0.0.9,<1.0",
+        "email-validator>=2.2,<3.0",
+        "greenlet>=3.0,<4.0",
+        "httpx>=0.27,<1.0",
+        "pyyaml>=6.0,<7.0",
+        "celery>=5.4,<6.0",
+        "redis>=5.0,<6.0",
+    ],
+    extras_require={
+        "dev": [
+            "pytest>=8.2,<9.0",
+            "pytest-asyncio>=0.23,<1.0",
+            "httpx>=0.27,<1.0",
+            "asgi-lifespan>=2.1,<3.0",
+        ]
+    },
+)
