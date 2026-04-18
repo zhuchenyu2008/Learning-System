@@ -16,7 +16,7 @@ TEST_DB_URL = "sqlite+aiosqlite:///./test_learning_system.db"
 
 
 @pytest.fixture
-async def client(tmp_path: Path) -> AsyncGenerator[AsyncClient, None]:
+async def app_client(tmp_path: Path) -> AsyncGenerator[tuple[AsyncClient, async_sessionmaker[AsyncSession]], None]:
     settings = get_settings()
     settings.database_url = TEST_DB_URL
     settings.workspace_root = str(tmp_path / "workspace")
@@ -57,9 +57,21 @@ async def client(tmp_path: Path) -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides[get_db_session] = override_get_db
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as async_client:
-        yield async_client
+        yield async_client, session_factory
 
     await engine.dispose()
+
+
+@pytest.fixture
+async def client(app_client: tuple[AsyncClient, async_sessionmaker[AsyncSession]]) -> AsyncGenerator[AsyncClient, None]:
+    async_client, _ = app_client
+    yield async_client
+
+
+@pytest.fixture
+async def session_factory(app_client: tuple[AsyncClient, async_sessionmaker[AsyncSession]]) -> async_sessionmaker[AsyncSession]:
+    _, factory = app_client
+    return factory
 
 
 @pytest.fixture
@@ -72,6 +84,28 @@ async def auth_headers(client: AsyncClient) -> dict[str, str]:
     response = await client.post(
         "/api/v1/auth/login",
         json={"username": "admin", "password": "ChangeMe123!"},
+    )
+    token = response.json()["data"]["tokens"]["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+async def viewer_auth_headers(client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]) -> dict[str, str]:
+    async with session_factory() as session:
+        session.add(
+            User(
+                username="viewer",
+                email="viewer@example.com",
+                password_hash=get_password_hash("ChangeMe123!"),
+                role=UserRole.VIEWER,
+                is_active=True,
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "viewer", "password": "ChangeMe123!"},
     )
     token = response.json()["data"]["tokens"]["access_token"]
     return {"Authorization": f"Bearer {token}"}

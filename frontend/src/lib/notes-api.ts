@@ -22,8 +22,7 @@ export const notesApi = {
     apiClient.post<SourceScanResult>('/sources/scan', payload, { token: getToken() }),
   listNotes: () => apiClient.get<NoteSummary[]>('/notes', { token: getToken() }),
   getNotesTree: () => apiClient.get<NoteTreeNode[]>('/notes/tree', { token: getToken() }),
-  getNoteDetail: (noteId: number, watchSeconds = 0) =>
-    apiClient.get<NoteDetail>(`/notes/${noteId}?watch_seconds=${Math.max(0, Math.floor(watchSeconds))}`, { token: getToken() }),
+  getNoteDetail: (noteId: number) => apiClient.get<NoteDetail>(`/notes/${noteId}`, { token: getToken() }),
   reportWatchSeconds: async (noteId: number, watchSeconds: number) => {
     const normalizedSeconds = Math.max(0, Math.floor(watchSeconds))
     if (!normalizedSeconds) return
@@ -31,11 +30,13 @@ export const notesApi = {
     const token = getToken()
     if (!token) return
 
-    await fetch(`${getApiBaseUrl()}/notes/${noteId}?watch_seconds=${normalizedSeconds}`, {
-      method: 'GET',
+    await fetch(`${getApiBaseUrl()}/notes/${noteId}/watch`, {
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
+      body: JSON.stringify({ watch_seconds: normalizedSeconds }),
       keepalive: true,
     }).catch(() => undefined)
   },

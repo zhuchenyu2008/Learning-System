@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -9,7 +9,7 @@ from app.core.responses import success_response
 from app.db.session import get_db_session
 from app.deps.auth import require_admin, require_viewer_or_admin
 from app.models.user import User
-from app.schemas.ingestion import NoteDetail, NoteGenerateRequest, NoteRead
+from app.schemas.ingestion import NoteDetail, NoteGenerateRequest, NoteRead, NoteWatchRequest
 from app.services.job_service import JobService
 from app.services.note_generation_service import NoteGenerationService
 from app.services.note_query_service import NoteQueryService
@@ -88,7 +88,6 @@ async def get_note_detail(
     _: Annotated[User, Depends(require_viewer_or_admin)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     current_user: Annotated[User, Depends(require_viewer_or_admin)],
-    watch_seconds: int = Query(default=0, ge=0, le=7200),
 ) -> dict:
     note = await NoteQueryService.get_note(session, note_id)
     if note is None:
@@ -99,7 +98,6 @@ async def get_note_detail(
         session,
         user=current_user,
         event_type="note_view",
-        watch_seconds=watch_seconds,
         page_view_increment=1,
         note_view_increment=1,
     )
@@ -107,3 +105,26 @@ async def get_note_detail(
     payload = NoteRead.model_validate(note).model_dump()
     payload["content"] = content
     return success_response(payload)
+
+
+@router.post("/{note_id}/watch")
+async def report_note_watch_seconds(
+    note_id: int,
+    payload: NoteWatchRequest,
+    request: Request,
+    _: Annotated[User, Depends(require_viewer_or_admin)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(require_viewer_or_admin)],
+) -> dict:
+    note = await NoteQueryService.get_note(session, note_id)
+    if note is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note not found")
+
+    await ReviewService.record_user_activity(
+        session,
+        user=current_user,
+        event_type="note_watch",
+        watch_seconds=payload.watch_seconds,
+    )
+    await session.commit()
+    return success_response({"note_id": note_id, "watch_seconds": payload.watch_seconds})

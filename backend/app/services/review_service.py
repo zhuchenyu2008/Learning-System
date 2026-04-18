@@ -291,6 +291,7 @@ class ReviewService:
             user=user,
             event_type="review_grade",
             watch_seconds=duration_seconds,
+            review_watch_seconds=duration_seconds,
             review_increment=1,
         )
         await session.commit()
@@ -320,6 +321,7 @@ class ReviewService:
             user=user,
             event_type="review_log",
             watch_seconds=duration_seconds,
+            review_watch_seconds=duration_seconds,
             review_increment=1,
         )
         await session.commit()
@@ -343,6 +345,7 @@ class ReviewService:
         page_view_increment: int = 0,
         note_view_increment: int = 0,
         review_increment: int = 0,
+        review_watch_seconds: int = 0,
         occurred_at: datetime | None = None,
     ) -> UserActivitySnapshot:
         result = await session.execute(select(UserActivitySnapshot).where(UserActivitySnapshot.user_id == user.id))
@@ -355,9 +358,10 @@ class ReviewService:
         page_view_increment = max(int(page_view_increment or 0), 0)
         note_view_increment = max(int(note_view_increment or 0), 0)
         review_increment = max(int(review_increment or 0), 0)
+        review_watch_seconds = max(int(review_watch_seconds or 0), 0)
 
         snapshot.total_watch_seconds = int(snapshot.total_watch_seconds or 0) + watch_seconds
-        snapshot.review_watch_seconds = int(snapshot.review_watch_seconds or 0) + watch_seconds
+        snapshot.review_watch_seconds = int(snapshot.review_watch_seconds or 0) + review_watch_seconds
         snapshot.page_view_count = int(snapshot.page_view_count or 0) + page_view_increment
         snapshot.note_view_count = int(snapshot.note_view_count or 0) + note_view_increment
         snapshot.review_count = int(snapshot.review_count or 0) + review_increment
