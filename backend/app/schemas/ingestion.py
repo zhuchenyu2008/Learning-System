@@ -55,6 +55,10 @@ class NoteDetail(NoteRead):
     content: str
 
 
+class NoteWatchRequest(BaseModel):
+    watch_seconds: int = Field(ge=0, le=7200)
+
+
 class NoteTreeNode(BaseModel):
     name: str
     path: str

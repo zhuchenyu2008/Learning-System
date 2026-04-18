@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -27,6 +27,14 @@ export default defineConfig({
   server: {
     port: 5173,
     host: '0.0.0.0',
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './src/test/setup.ts',
+    css: true,
+    restoreMocks: true,
+    clearMocks: true,
   },
   build: {
     rollupOptions: {

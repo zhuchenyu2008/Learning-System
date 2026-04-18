@@ -93,8 +93,15 @@ async def test_review_settings_activity_enrichment(client, workspace_root, auth_
     assert bootstrap_response.status_code == 200
     assert bootstrap_response.json()["data"]["created_knowledge_points"] >= 2
 
-    note_detail_response = await client.get(f"/api/v1/notes/{note_id}?watch_seconds=18", headers=auth_headers)
+    note_detail_response = await client.get(f"/api/v1/notes/{note_id}", headers=auth_headers)
     assert note_detail_response.status_code == 200
+
+    note_watch_response = await client.post(
+        f"/api/v1/notes/{note_id}/watch",
+        json={"watch_seconds": 18},
+        headers=auth_headers,
+    )
+    assert note_watch_response.status_code == 200
 
     queue_response = await client.get("/api/v1/review/queue?limit=10&due_only=true", headers=auth_headers)
     card_id = queue_response.json()["data"][0]["card_id"]
@@ -114,11 +121,11 @@ async def test_review_settings_activity_enrichment(client, workspace_root, auth_
     activity = await client.get("/api/v1/admin/user-activity", headers=auth_headers)
     assert activity.status_code == 200
     first = activity.json()["data"][0]
-    assert first["page_view_count"] >= 1
-    assert first["note_view_count"] >= 1
+    assert first["page_view_count"] == 1
+    assert first["note_view_count"] == 1
     assert first["review_watch_seconds"] >= 42
     assert first["total_watch_seconds"] >= 60
-    assert first["last_event_type"] in {"review_grade", "review_log", "note_view", "login"}
+    assert first["last_event_type"] in {"review_grade", "review_log", "note_watch", "note_view", "login"}
 
 
 @pytest.mark.asyncio

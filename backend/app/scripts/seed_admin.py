@@ -4,7 +4,6 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.security import get_password_hash
-from app.db.base import Base
 from app.db.session import get_engine, get_sessionmaker
 from app.models.enums import UserRole
 from app.models.system_setting import SystemSetting
@@ -15,9 +14,6 @@ async def seed() -> None:
     settings = get_settings()
     engine = get_engine()
     session_factory = get_sessionmaker()
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
     async with session_factory() as session:
         result = await session.execute(select(User).where(User.username == settings.initial_admin_username))
