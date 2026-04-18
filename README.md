@@ -113,7 +113,56 @@ docker compose build
 docker compose up -d
 ```
 
-### 3. 核验
+### 3. 配置文件说明
+#### `.env.example` / `.env`
+建议先执行：
+```bash
+cp .env.example .env
+```
+
+常用配置项说明：
+
+| 配置项 | 作用 | 何时需要修改 |
+| --- | --- | --- |
+| `APP_NAME` | 应用显示名称 | 一般无需修改 |
+| `ENVIRONMENT` | 运行环境标识 | 区分开发/生产时修改 |
+| `DEBUG` | 是否开启调试模式 | 生产环境应保持 `false` |
+| `API_V1_PREFIX` | 后端 API 前缀 | 接口路径需要统一调整时修改 |
+| `FRONTEND_PORT` | 前端宿主机端口 | 8080 被占用时修改 |
+| `BACKEND_PORT` | 后端宿主机端口 | 8000 被占用时修改 |
+| `POSTGRES_PORT` | PostgreSQL 宿主机端口 | 5432 被占用时修改 |
+| `REDIS_PORT` | Redis 宿主机端口 | 6379 被占用时修改 |
+| `VITE_API_BASE_URL` | 前端请求 API 的基础路径 | 反向代理或接口前缀变化时修改 |
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | 数据库名、用户名、密码 | 首次部署或安全加固时应修改，尤其是密码 |
+| `DATABASE_URL` | 后端数据库连接串 | 自定义数据库地址、账号或库名时同步修改 |
+| `REDIS_URL` | Redis 连接地址 | Redis 地址或端口变化时修改 |
+| `CELERY_BROKER_URL` | Celery Broker 地址 | 队列中间件变化时修改 |
+| `CELERY_RESULT_BACKEND` | Celery 结果存储地址 | 结果后端变化时修改 |
+| `JWT_SECRET_KEY` | JWT 签名密钥 | 生产环境必须改为高强度随机字符串 |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | 访问令牌有效期（分钟） | 登录安全策略调整时修改 |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | 刷新令牌有效期（天） | 登录安全策略调整时修改 |
+| `INITIAL_ADMIN_USERNAME` / `INITIAL_ADMIN_PASSWORD` / `INITIAL_ADMIN_EMAIL` | 初始化管理员账号 | 首次部署前建议改成自己的值 |
+| `WORKSPACE_HOST_PATH` | 宿主机学习资料目录映射路径 | 想把工作区放到其他目录时修改 |
+| `WORKSPACE_ROOT` | 容器内工作区路径 | 一般无需修改 |
+| `OBSIDIAN_HEADLESS_PATH` | `obsidian-headless` 可执行程序路径 | 命令不在系统 PATH 或路径不同的时候修改 |
+| `OBSIDIAN_VAULT` | Obsidian Vault 路径 | 使用 Obsidian 同步时填写 |
+| `OBSIDIAN_CONFIG_DIR` | Obsidian 配置目录 | 使用独立配置目录时填写 |
+| `OBSIDIAN_DEVICE_NAME` | Obsidian 设备名称 | 多设备同步区分设备时填写 |
+
+> 建议至少修改：数据库密码、`JWT_SECRET_KEY`、初始管理员账号密码。
+
+#### `docker-compose.yml`
+`docker-compose.yml` 负责定义容器编排关系，默认包含：
+- `postgres`：PostgreSQL 数据库
+- `redis`：缓存与队列
+- `backend`：FastAPI 后端
+- `worker`：Celery worker
+- `beat`：Celery beat 定时任务
+- `frontend`：前端静态站点 / 代理入口
+
+通常只需要配合 `.env` 调整端口、密码、路径；除非你要改服务拓扑、镜像来源或挂载方式，否则一般不需要直接修改 compose 文件。
+
+### 4. 核验
 ```bash
 docker compose ps
 curl http://127.0.0.1:18000/api/v1/health
