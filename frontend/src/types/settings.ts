@@ -4,6 +4,8 @@ export interface ProviderConfig {
   provider_type: ProviderType
   base_url: string
   api_key?: string
+  api_key_masked?: string
+  has_api_key?: boolean
   model_name: string
   extra_json?: string | Record<string, unknown> | null
   is_enabled: boolean

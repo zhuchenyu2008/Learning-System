@@ -2,8 +2,12 @@ export type SourceFileType = 'audio' | 'video' | 'image' | 'text' | 'markdown' |
 
 export type NoteType = 'source_note' | 'summary' | 'mindmap' | 'review_note'
 
+export interface NotesListOptions {
+  includeArtifacts?: boolean
+}
+
 export type JobType = 'note_generation' | string
-export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | string
+export type JobStatus = 'queued' | 'pending' | 'running' | 'completed' | 'failed' | string
 
 export interface SourceAsset {
   id: number
@@ -19,6 +23,11 @@ export interface SourceScanResult {
   updated: number
   scanned_files: number
   assets: SourceAsset[]
+}
+
+export interface SourceUploadPayload {
+  file: File
+  uploadDir?: string | null
 }
 
 export interface NoteSummary {
@@ -88,20 +97,26 @@ export interface ReviewOverview {
   recent_review_seconds: number
 }
 
+export interface ReviewKnowledgePoint {
+  id: number
+  note_id: number
+  title: string
+  content_md: string
+  embedding_vector: number[] | null
+  tags_json: Record<string, unknown>
+  summary_text?: string | null
+  source_anchor?: string | null
+  subject?: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface ReviewQueueItem {
   card_id: number
   due_at: string
   suspended: boolean
-  knowledge_point: {
-    id: number
-    note_id: number
-    title: string
-    content_md: string
-    embedding_vector: number[] | null
-    tags_json: Record<string, unknown>
-    created_at: string
-    updated_at: string
-  }
+  subject?: string | null
+  knowledge_point: ReviewKnowledgePoint
   note: {
     id: number
     title: string
@@ -109,10 +124,78 @@ export interface ReviewQueueItem {
   }
 }
 
+export interface ReviewSubjectSummary {
+  subject: string
+  total_cards: number
+  due_cards: number
+}
+
+export interface ReviewCardAdminPayload {
+  note_id: number
+  title: string
+  content_md: string
+  summary_text?: string | null
+  source_anchor?: string | null
+  tags?: string[]
+  subject?: string | null
+  suspended?: boolean
+}
+
+export interface ReviewCardAdminUpdatePayload {
+  title?: string
+  content_md?: string
+  summary_text?: string | null
+  source_anchor?: string | null
+  tags?: string[]
+  subject?: string | null
+  suspended?: boolean
+}
+
+export interface ReviewCardAdminItem extends ReviewQueueItem {}
+
 export interface ReviewGradePayload {
   rating: 1 | 2 | 3 | 4
   duration_seconds?: number
   note?: string | null
+  answer?: string | null
+  ai_judge?: Record<string, unknown> | null
+}
+
+export interface ReviewJudgePayload {
+  answer: string
+  duration_seconds?: number
+  note?: string | null
+}
+
+export interface ReviewJudgeResult {
+  card_id: number
+  answer: string
+  expected_answer: string
+  suggested_rating: 1 | 2 | 3 | 4
+  correctness: 'correct' | 'partial' | 'incorrect' | 'unknown'
+  explanation: string
+  judge_status: 'ai' | 'fallback'
+  judge_error: string | null
+}
+
+export interface ReviewSessionState {
+  active_card_id: number | null
+  accumulated_seconds: number
+  increment_seconds?: number
+  started_at: string | null
+  last_heartbeat_at: string | null
+}
+
+export interface ReviewSessionFinalizePayload {
+  duration_seconds?: number
+}
+
+export interface ReviewSessionFinalizeResult {
+  card_id: number
+  duration_seconds: number
+  server_accumulated_seconds: number
+  client_reported_seconds: number
+  finalized_at: string
 }
 
 export interface ReviewLogRecord {
@@ -147,6 +230,12 @@ export interface ReviewBootstrapResult {
   note_ids: number[]
 }
 
+export interface ReviewCardAdminDeleteResult {
+  card_id: number
+  deleted: boolean
+  deleted_knowledge_point_id: number | null
+}
+
 export interface ReviewLogCreatePayload {
   review_card_id: number
   rating: 1 | 2 | 3 | 4
@@ -177,9 +266,9 @@ export interface ArtifactGeneratePayload {
 
 export interface ArtifactGenerateResult {
   job_id: number
-  artifact_id: number
-  output_note_id: number
-  relative_path: string
+  artifact_id: number | null
+  output_note_id: number | null
+  relative_path: string | null
   status: string
   celery_task_id?: string | null
 }

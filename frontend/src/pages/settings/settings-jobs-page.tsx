@@ -35,7 +35,7 @@ export function SettingsJobsPage() {
   return (
     <PagePlaceholder
       title="任务与调度"
-      description="展示调度器任务列表、后台 job 状态与系统级调度相关配置。普通用户可见但保持灰态禁用。"
+      description="查看调度任务、后台 job 与系统调度相关设置。"
       className="space-y-4"
       actions={
         <PermissionButton
@@ -54,7 +54,7 @@ export function SettingsJobsPage() {
     >
       <ReadonlyNotice isAdmin={isAdmin} reason="普通用户仅可查看任务和调度信息，不可修改任何调度策略。" />
 
-      <SettingsSection title="系统调度策略" description="展示注册开关、时区与复习保留目标，作为调度相关的系统背景信息。" className="md:col-span-2 xl:col-span-1">
+      <SettingsSection title="系统调度策略" description="注册开关、时区与复习保留目标。" className="md:col-span-2 xl:col-span-1">
         {systemQuery.isLoading ? (
           <LoadingStateCard title="正在加载系统调度策略" description="读取系统级开关、时区与保留策略。" />
         ) : systemQuery.error ? (
@@ -76,7 +76,7 @@ export function SettingsJobsPage() {
         )}
       </SettingsSection>
 
-      <SettingsSection title="Scheduler Tasks" description="来自 `/scheduler/tasks` 的已注册任务；用于展示 review maintenance、summary、mindmap 等调度入口。" className="md:col-span-2 xl:col-span-2">
+      <SettingsSection title="Scheduler Tasks" description="已注册调度任务。" className="md:col-span-2 xl:col-span-2">
         {schedulerQuery.isLoading ? (
           <LoadingStateCard title="正在加载调度任务" description="读取 `/scheduler/tasks` 返回的注册任务。" />
         ) : schedulerQuery.error ? (
@@ -104,7 +104,7 @@ export function SettingsJobsPage() {
         )}
       </SettingsSection>
 
-      <SettingsSection title="后台 Jobs" description="展示后端异步作业状态，如 note generation、summary、mindmap 等任务。" className="md:col-span-2 xl:col-span-3">
+      <SettingsSection title="后台 Jobs" description="最近异步任务状态。" className="md:col-span-2 xl:col-span-3">
         {jobsQuery.isLoading ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 3 }).map((_, index) => (

@@ -1,9 +1,10 @@
 import { Suspense, lazy } from 'react'
-import { createBrowserRouter, Navigate } from 'react-router-dom'
+import { createBrowserRouter, Navigate, redirect } from 'react-router-dom'
 import { ensureCurrentUser } from '@/app/auth'
 import { ProtectedLayout, RequireAuthBoundary, RootRedirect, RoutePending } from '@/app/route-components'
 
 const LoginPage = lazy(() => import('@/pages/login-page').then((module) => ({ default: module.LoginPage })))
+const RegisterPage = lazy(() => import('@/pages/register-page').then((module) => ({ default: module.RegisterPage })))
 const NotesOverviewPage = lazy(() =>
   import('@/pages/notes/notes-overview-page').then((module) => ({ default: module.NotesOverviewPage })),
 )
@@ -18,6 +19,9 @@ const ReviewOverviewPage = lazy(() =>
 )
 const ReviewSessionPage = lazy(() =>
   import('@/pages/review/review-session-page').then((module) => ({ default: module.ReviewSessionPage })),
+)
+const ReviewCardsAdminPage = lazy(() =>
+  import('@/pages/review/review-cards-admin-page').then((module) => ({ default: module.ReviewCardsAdminPage })),
 )
 const ReviewSummariesPage = lazy(() =>
   import('@/pages/review/review-summaries-page').then((module) => ({ default: module.ReviewSummariesPage })),
@@ -53,6 +57,14 @@ function withSuspense(node: React.ReactNode) {
   return <Suspense fallback={<RoutePending />}>{node}</Suspense>
 }
 
+async function settingsIndexLoader() {
+  const user = await ensureCurrentUser()
+  if (!user) {
+    throw new Response('Unauthorized', { status: 401 })
+  }
+  return redirect(user.role === 'admin' ? '/settings/ai' : '/settings/jobs')
+}
+
 export const router = createBrowserRouter([
   {
     path: '/',
@@ -61,6 +73,10 @@ export const router = createBrowserRouter([
   {
     path: '/login',
     element: withSuspense(<LoginPage />),
+  },
+  {
+    path: '/register',
+    element: withSuspense(<RegisterPage />),
   },
   {
     element: <RequireAuthBoundary />,
@@ -77,9 +93,10 @@ export const router = createBrowserRouter([
           { path: '/review', element: <Navigate to="/review/overview" replace /> },
           { path: '/review/overview', element: withSuspense(<ReviewOverviewPage />) },
           { path: '/review/session', element: withSuspense(<ReviewSessionPage />) },
+          { path: '/review/cards-admin', element: withSuspense(<ReviewCardsAdminPage />) },
           { path: '/review/summaries', element: withSuspense(<ReviewSummariesPage />) },
           { path: '/review/mindmaps', element: withSuspense(<ReviewMindmapsPage />) },
-          { path: '/settings', element: <Navigate to="/settings/ai" replace /> },
+          { path: '/settings', loader: settingsIndexLoader, element: null },
           { path: '/settings/ai', element: withSuspense(<SettingsAiPage />) },
           { path: '/settings/workspace', element: withSuspense(<SettingsWorkspacePage />) },
           { path: '/settings/users', element: withSuspense(<SettingsUsersPage />) },

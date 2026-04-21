@@ -31,7 +31,7 @@ async function safeGet<T>(path: string): Promise<T | null> {
 }
 
 export const settingsApi = {
-  getSystemSettings: () => safeGet<SystemSettings>('/settings/system'),
+  getSystemSettings: () => safeGet<SystemSettings>('/auth/registration'),
   updateSystemSettings: (payload: SystemSettings) => apiClient.put<SystemSettings>('/settings/system', payload, { token: getToken() }),
 
   getAiSettings: () => safeGet<SettingsAiPayload>('/settings/ai'),

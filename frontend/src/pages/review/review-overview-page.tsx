@@ -30,6 +30,7 @@ export function ReviewOverviewPage() {
   const summariesQuery = useQuery({ queryKey: ['summaries'], queryFn: () => reviewApi.listSummaries() })
   const mindmapsQuery = useQuery({ queryKey: ['mindmaps'], queryFn: () => reviewApi.listMindmaps() })
   const notesQuery = useQuery({ queryKey: ['notes'], queryFn: () => notesApi.listNotes(), enabled: isAdmin })
+  const subjectsQuery = useQuery({ queryKey: ['review-subjects'], queryFn: () => reviewApi.listSubjects() })
 
   const bootstrapMutation = useMutation({
     mutationFn: () => reviewApi.bootstrapCards({ note_ids: [], all_notes: true }),
@@ -53,13 +54,18 @@ export function ReviewOverviewPage() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cloth-accent">Review Overview</p>
             <h1 className="font-serif text-3xl text-cloth-ink">复习总览</h1>
-            <p className="mt-2 max-w-3xl text-sm text-cloth-muted">聚合今日待复习量、FSRS 卡片规模、最近复习日志，以及总结/思维导图产物入口。</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <Link to="/review/session" className="fabric-btn fabric-btn-primary">
               <BrainCircuit className="h-4 w-4" />
               开始复习
             </Link>
+            {isAdmin ? (
+              <Link to="/review/cards-admin" className="fabric-btn">
+                管理复习卡
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            ) : null}
             <PermissionButton
               allowed={isAdmin}
               reason="仅管理员可初始化复习卡"
@@ -84,17 +90,42 @@ export function ReviewOverviewPage() {
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatCard title="今日待复习" value={String(overviewQuery.data?.due_today_count ?? 0)}>
-            已到期或应于今日完成的复习卡数量
+            今日应完成的复习卡
           </StatCard>
           <StatCard title="总卡片数" value={String(overviewQuery.data?.total_cards ?? 0)} tone="accent">
             当前 FSRS 卡片总数
           </StatCard>
           <StatCard title="最近复习次数" value={String(overviewQuery.data?.recent_review_count ?? 0)} tone="success">
-            最近 7 天内写入的复习日志数量
+            最近 7 天复习次数
           </StatCard>
           <StatCard title="最近复习时长" value={formatSeconds(overviewQuery.data?.recent_review_seconds ?? 0)} tone="warn">
-            最近 7 天累计复习时长
+            最近 7 天累计时长
           </StatCard>
+        </div>
+      </section>
+
+      <section className="fabric-panel">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-cloth-muted">Review Subjects</p>
+            <h2 className="mt-1 font-serif text-2xl text-cloth-ink">学科复习分布</h2>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {(subjectsQuery.data ?? []).length ? (
+            (subjectsQuery.data ?? []).map((item) => (
+              <div key={item.subject} className="fabric-card space-y-2">
+                <p className="text-sm font-semibold text-cloth-ink">{item.subject}</p>
+                <p className="text-xs text-cloth-muted">到期 {item.due_cards} / 总计 {item.total_cards}</p>
+                <Link to={`/review/session?subject=${encodeURIComponent(item.subject)}&limit=${Math.max(1, Math.min(item.due_cards || item.total_cards, 20))}`} className="fabric-btn">
+                  按该学科开始
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            ))
+          ) : (
+            <div className="fabric-card text-sm text-cloth-muted">暂无学科分布数据。</div>
+          )}
         </div>
       </section>
 

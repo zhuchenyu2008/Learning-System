@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, String, Text
+from sqlalchemy import JSON, DateTime, Enum, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
@@ -11,8 +11,16 @@ class Job(TimestampMixin, Base):
     __tablename__ = "jobs"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    job_type: Mapped[JobType] = mapped_column(nullable=False, index=True)
-    status: Mapped[JobStatus] = mapped_column(nullable=False, index=True)
+    job_type: Mapped[JobType] = mapped_column(
+        Enum(JobType, native_enum=False, values_callable=lambda enum_cls: [item.value for item in enum_cls]),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[JobStatus] = mapped_column(
+        Enum(JobStatus, native_enum=False, values_callable=lambda enum_cls: [item.value for item in enum_cls]),
+        nullable=False,
+        index=True,
+    )
     payload_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     result_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     logs_json: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)

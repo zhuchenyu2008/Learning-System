@@ -1,6 +1,8 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 import rehypeRaw from 'rehype-raw'
+import rehypeKatex from 'rehype-katex'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import { FileText } from 'lucide-react'
 import type { Components } from 'react-markdown'
@@ -44,7 +46,7 @@ const markdownComponents: Components = {
     const code = String(children).replace(/\n$/, '')
 
     if (match?.[1] === 'mermaid') {
-      return <MermaidRenderer chart={code} />
+      return <MermaidRenderer chart={code} title="笔记内 Mermaid 图表" />
     }
 
     return (
@@ -65,9 +67,23 @@ function formatDate(value: string) {
   }).format(new Date(value))
 }
 
+export function MarkdownContent({ content, className = '' }: { content: string; className?: string }) {
+  return (
+    <div className={`note-prose rounded-2xl border border-cloth-line/80 bg-white/80 p-5 shadow-panel fabric-glow lg:p-7 ${className}`.trim()}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], rehypeKatex]}
+        components={markdownComponents}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  )
+}
+
 export function NoteDetailRenderer({ note }: NoteDetailRendererProps) {
   return (
-    <article className="space-y-4">
+    <article className="min-w-0 space-y-4">
       <header className="rounded-2xl border border-cloth-line/80 bg-white/55 p-5 shadow-panel fabric-glow">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-cloth-panel px-3 py-1 text-xs uppercase tracking-[0.18em] text-cloth-muted">
@@ -78,12 +94,12 @@ export function NoteDetailRenderer({ note }: NoteDetailRendererProps) {
           ) : null}
           <span className="inline-flex items-center gap-1 rounded-full border border-cloth-line/70 bg-white/70 px-3 py-1 text-xs text-cloth-muted">
             <FileText className="h-3.5 w-3.5" />
-            Markdown 阅读视图
+            Markdown / LaTeX 阅读视图
           </span>
         </div>
-        <h2 className="mt-3 font-serif text-3xl text-cloth-ink">{note.title}</h2>
+        <h2 className="mt-3 break-words font-serif text-3xl text-cloth-ink">{note.title}</h2>
         <div className="mt-3 grid gap-2 text-sm text-cloth-muted md:grid-cols-2">
-          <div>
+          <div className="min-w-0">
             <span className="font-medium text-cloth-ink">路径：</span>
             <span className="break-all">{note.relative_path}</span>
           </div>
@@ -94,15 +110,7 @@ export function NoteDetailRenderer({ note }: NoteDetailRendererProps) {
         </div>
       </header>
 
-      <div className="note-prose rounded-2xl border border-cloth-line/80 bg-white/80 p-5 shadow-panel fabric-glow lg:p-7">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
-          components={markdownComponents}
-        >
-          {note.content}
-        </ReactMarkdown>
-      </div>
+      <MarkdownContent content={note.content} />
     </article>
   )
 }

@@ -31,6 +31,10 @@ class UserActivitySnapshot(TimestampMixin, Base):
     page_view_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     note_view_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     review_watch_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    active_review_card_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    active_review_session_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    review_session_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_session_last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     last_event_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
 

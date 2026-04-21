@@ -1,6 +1,7 @@
 from app.core.security import create_access_token, get_password_hash
 from app.models.enums import UserRole
 from app.models.user import User
+from app.services.settings_admin_service import SettingsAdminService
 
 import pytest
 
@@ -27,6 +28,40 @@ async def test_login_and_me(client):
     me_payload = me_response.json()
     assert me_payload["data"]["username"] == "admin"
     assert me_payload["data"]["role"] == "admin"
+
+
+@pytest.mark.asyncio
+async def test_register_flow_respects_registration_switch(client, session_factory):
+    disabled_response = await client.post(
+        "/api/v1/auth/register",
+        json={"username": "new-user", "email": "new@example.com", "password": "ChangeMe123!"},
+    )
+    assert disabled_response.status_code == 403
+    assert disabled_response.json()["detail"] == "Registration is disabled"
+
+    async with session_factory() as session:
+        await SettingsAdminService.update_system_setting(
+            session,
+            allow_registration=True,
+            workspace_root="/tmp/workspace",
+            timezone="UTC",
+            review_retention_target="90d",
+        )
+
+    enabled_response = await client.post(
+        "/api/v1/auth/register",
+        json={"username": "new-user", "email": "new@example.com", "password": "ChangeMe123!"},
+    )
+    assert enabled_response.status_code == 200
+    payload = enabled_response.json()
+    assert payload["success"] is True
+    assert payload["data"]["user"]["username"] == "new-user"
+    assert payload["data"]["user"]["role"] == "viewer"
+    assert payload["data"]["tokens"]["access_token"]
+
+    registration_status = await client.get("/api/v1/auth/registration")
+    assert registration_status.status_code == 200
+    assert registration_status.json()["data"]["allow_registration"] is True
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,10 @@ class SourceAssetRead(BaseModel):
     metadata_json: dict
 
 
+class SourceUploadResult(BaseModel):
+    asset: SourceAssetRead
+
+
 class SourceScanRequest(BaseModel):
     root_path: str | None = None
     recursive: bool = True

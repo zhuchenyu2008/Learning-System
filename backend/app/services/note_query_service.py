@@ -5,13 +5,20 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.enums import NoteType
 from app.models.note import Note
+
+
+ARTIFACT_NOTE_TYPES = (NoteType.SUMMARY.value, NoteType.MINDMAP.value)
 
 
 class NoteQueryService:
     @staticmethod
-    async def list_notes(session: AsyncSession) -> list[Note]:
-        result = await session.execute(select(Note).order_by(Note.updated_at.desc(), Note.id.desc()))
+    async def list_notes(session: AsyncSession, *, include_artifacts: bool = False) -> list[Note]:
+        stmt = select(Note)
+        if not include_artifacts:
+            stmt = stmt.where(Note.note_type.notin_(ARTIFACT_NOTE_TYPES))
+        result = await session.execute(stmt.order_by(Note.updated_at.desc(), Note.id.desc()))
         return list(result.scalars().all())
 
     @staticmethod

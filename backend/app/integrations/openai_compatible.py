@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import mimetypes
 from pathlib import Path
 
@@ -10,7 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.integrations.pdf_processing import PdfProcessingService
 from app.models.ai_provider_config import AIProviderConfig
 from app.models.enums import ProviderType, SourceFileType
-from app.schemas.integrations import OpenAIChatResult, OpenAIMessage, ProviderExtractionResult, ProviderHealthResult
+from app.schemas.integrations import (
+    OpenAIChatResult,
+    OpenAIEmbeddingResult,
+    OpenAIMessage,
+    ProviderExtractionResult,
+    ProviderHealthResult,
+)
 from app.services.safe_file_service import SafeFileService
 
 
@@ -61,11 +68,55 @@ class OpenAICompatibleProviderAdapter:
             response = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
-        content = data["choices"][0]["message"]["content"]
+        content = self._extract_text_from_payload(data)
         return OpenAIChatResult(content=content, raw_response=data)
+
+    async def embed(self, texts: list[str] | str) -> OpenAIEmbeddingResult:
+        provider = await self.get_provider(ProviderType.EMBEDDING)
+        if provider is None:
+            raise ValueError("Embedding provider is not configured or enabled")
+
+        inputs = [texts] if isinstance(texts, str) else list(texts)
+        if not inputs:
+            return OpenAIEmbeddingResult(vectors=[], model_name=provider.model_name, raw_response={"data": []})
+
+        payload = {
+            "model": provider.model_name,
+            "input": inputs,
+            **(provider.extra_json or {}),
+        }
+        headers = {
+            "Authorization": f"Bearer {provider.api_key_encrypted}",
+            "Content-Type": "application/json",
+        }
+        base_url = provider.base_url.rstrip("/")
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(f"{base_url}/embeddings", json=payload, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+        vectors: list[list[float]] = []
+        for item in data.get("data", []):
+            if not isinstance(item, dict):
+                continue
+            embedding = item.get("embedding")
+            if isinstance(embedding, list):
+                vector = [float(value) for value in embedding]
+                vectors.append(vector)
+
+        return OpenAIEmbeddingResult(
+            vectors=vectors,
+            model_name=data.get("model") or provider.model_name,
+            raw_response=data,
+            usage=data.get("usage") if isinstance(data.get("usage"), dict) else None,
+        )
 
     async def extract_content(self, relative_path: str, file_type: SourceFileType) -> ProviderExtractionResult:
         if file_type in {SourceFileType.TEXT, SourceFileType.MARKDOWN, SourceFileType.OTHER}:
+            absolute_path = SafeFileService.resolve_workspace_path(relative_path)
+            if absolute_path.suffix.lower() == ".docx":
+                text, docx_metadata = SafeFileService.extract_docx_text_and_metadata(absolute_path)
+                return ProviderExtractionResult(text=text, metadata={"mode": "plain_text", "docx": docx_metadata})
             text = SafeFileService.read_text(relative_path)
             return ProviderExtractionResult(text=text, metadata={"mode": "plain_text"})
 
@@ -96,19 +147,39 @@ class OpenAICompatibleProviderAdapter:
                 return ProviderExtractionResult(text=normalized_text, metadata=metadata)
             return ProviderExtractionResult(text=fallback_text, metadata=metadata)
 
-        mime_type = mimetypes.guess_type(absolute_path.name)[0] or "application/octet-stream"
-        file_bytes = absolute_path.read_bytes()
-        files = {"file": (absolute_path.name, file_bytes, mime_type)}
-        data = {"model": provider.model_name, **(provider.extra_json or {})}
         headers = {"Authorization": f"Bearer {provider.api_key_encrypted}"}
         base_url = provider.base_url.rstrip("/")
-        endpoint = "/audio/transcriptions" if provider_type == ProviderType.STT else "/files/extract"
 
         async with httpx.AsyncClient(timeout=300.0) as client:
-            response = await client.post(f"{base_url}{endpoint}", data=data, files=files, headers=headers)
+            if provider_type == ProviderType.STT:
+                mime_type = mimetypes.guess_type(absolute_path.name)[0] or "application/octet-stream"
+                file_bytes = absolute_path.read_bytes()
+                files = {"file": (absolute_path.name, file_bytes, mime_type)}
+                data = {"model": provider.model_name, **(provider.extra_json or {})}
+                response = await client.post(f"{base_url}/audio/transcriptions", data=data, files=files, headers=headers)
+            else:
+                mime_type = mimetypes.guess_type(absolute_path.name)[0] or "application/octet-stream"
+                encoded = base64.b64encode(absolute_path.read_bytes()).decode("ascii")
+                image_url = f"data:{mime_type};base64,{encoded}"
+                prompt_text = "请提取图片中的文字，并保留尽可能清晰的结构。"
+                payload = {
+                    "model": provider.model_name,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt_text},
+                                {"type": "image_url", "image_url": {"url": image_url}},
+                            ],
+                        }
+                    ],
+                    **(provider.extra_json or {}),
+                }
+                response = await client.post(f"{base_url}/chat/completions", json=payload, headers={**headers, "Content-Type": "application/json"})
+
             if response.is_success:
                 payload = response.json()
-                text = payload.get("text") or payload.get("content") or payload.get("output_text") or ""
+                text = self._extract_text_from_payload(payload)
                 metadata = {"mode": "provider", "raw": payload, "source_mode": "provider"}
                 if file_type == SourceFileType.PDF:
                     normalized_text, pdf_meta = PdfProcessingService.normalize_provider_payload(
@@ -134,6 +205,34 @@ class OpenAICompatibleProviderAdapter:
             metadata.update(pdf_meta)
             return ProviderExtractionResult(text=normalized_text, metadata=metadata)
         return ProviderExtractionResult(text=fallback_text, metadata=metadata)
+
+    @staticmethod
+    def _extract_text_from_payload(payload: dict) -> str:
+        if not isinstance(payload, dict):
+            return ""
+
+        direct_text = payload.get("text") or payload.get("content") or payload.get("output_text")
+        if isinstance(direct_text, str):
+            return direct_text
+
+        choices = payload.get("choices")
+        if isinstance(choices, list) and choices:
+            message = choices[0].get("message") if isinstance(choices[0], dict) else None
+            if isinstance(message, dict):
+                content = message.get("content")
+                if isinstance(content, str):
+                    return content
+                if isinstance(content, list):
+                    collected: list[str] = []
+                    for item in content:
+                        if isinstance(item, dict):
+                            text = item.get("text") or item.get("content")
+                            if isinstance(text, str):
+                                collected.append(text)
+                    if collected:
+                        return "\n".join(collected)
+
+        return ""
 
     @staticmethod
     def _build_placeholder_extraction(absolute_path: Path, file_type: SourceFileType) -> str:

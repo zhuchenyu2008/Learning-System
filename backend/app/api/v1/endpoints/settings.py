@@ -21,6 +21,19 @@ from app.schemas.settings_admin import (
 from app.services.provider_probe_service import ProviderProbeService
 from app.services.settings_admin_service import SettingsAdminService
 
+
+def _serialize_ai_provider(item) -> dict:
+    return AIProviderRead(
+        provider_type=ProviderType(item.provider_type),
+        base_url=item.base_url,
+        api_key="",
+        api_key_masked=SettingsAdminService.mask_api_key(item.api_key_encrypted),
+        has_api_key=bool(item.api_key_encrypted),
+        model_name=item.model_name,
+        extra_json=item.extra_json,
+        is_enabled=item.is_enabled,
+    ).model_dump()
+
 router = APIRouter()
 
 
@@ -50,17 +63,7 @@ async def get_ai_settings(
 ) -> dict:
     providers = await SettingsAdminService.list_ai_providers(session)
     data = {
-        "providers": [
-            AIProviderRead(
-                provider_type=ProviderType(item.provider_type),
-                base_url=item.base_url,
-                api_key=item.api_key_encrypted,
-                model_name=item.model_name,
-                extra_json=item.extra_json,
-                is_enabled=item.is_enabled,
-            ).model_dump()
-            for item in providers
-        ]
+        "providers": [_serialize_ai_provider(item) for item in providers]
     }
     return success_response(data)
 
@@ -77,17 +80,7 @@ async def update_ai_settings(
     )
     return success_response(
         {
-            "providers": [
-                AIProviderRead(
-                    provider_type=ProviderType(item.provider_type),
-                    base_url=item.base_url,
-                    api_key=item.api_key_encrypted,
-                    model_name=item.model_name,
-                    extra_json=item.extra_json,
-                    is_enabled=item.is_enabled,
-                ).model_dump()
-                for item in providers
-            ]
+            "providers": [_serialize_ai_provider(item) for item in providers]
         }
     )
 

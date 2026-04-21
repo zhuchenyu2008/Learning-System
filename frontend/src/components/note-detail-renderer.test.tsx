@@ -19,6 +19,34 @@ describe('NoteDetailRenderer', () => {
     expect(screen.getByTestId('mermaid-renderer')).toHaveTextContent('graph TD')
   })
 
+  it('passes nested mermaid fences through the local renderer fallback boundary', () => {
+    const note = {
+      ...sampleNoteDetail,
+      content: '# Nested Mermaid\n\n```mermaid\n```mermaid\ngraph TD\nA-->B\n```\n```',
+    }
+
+    renderWithProviders(<NoteDetailRenderer note={note} />)
+
+    expect(screen.getByTestId('mermaid-renderer')).toHaveTextContent('```mermaid')
+    expect(screen.getByTestId('mermaid-renderer')).toHaveTextContent('graph TD')
+    expect(screen.getByTestId('mermaid-renderer')).toHaveTextContent('A-->B')
+  })
+
+  it('renders LaTeX expressions in core markdown content', () => {
+    const note = {
+      ...sampleNoteDetail,
+      content: '# Math\n\nInline $E = mc^2$ and block:\n\n$$\\int_0^1 x^2 \\, dx$$',
+    }
+
+    const { container } = renderWithProviders(<NoteDetailRenderer note={note} />)
+
+    expect(container.querySelectorAll('.katex').length).toBeGreaterThan(0)
+    const mathAnnotations = Array.from(container.querySelectorAll('annotation[encoding="application/x-tex"]')).map((node) => node.textContent ?? '')
+    expect(mathAnnotations).toContain('E = mc^2')
+    expect(mathAnnotations).toContain('\\int_0^1 x^2 \\, dx')
+    expect(screen.getByText('Math')).toBeInTheDocument()
+  })
+
   it('opens markdown links in a new tab safely', () => {
     const note = {
       ...sampleNoteDetail,

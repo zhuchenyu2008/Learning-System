@@ -61,7 +61,9 @@ class AIProviderRead(BaseModel):
 
     provider_type: ProviderType
     base_url: str
-    api_key: str
+    api_key: str = ""
+    api_key_masked: str = ""
+    has_api_key: bool = False
     model_name: str
     extra_json: dict
     is_enabled: bool

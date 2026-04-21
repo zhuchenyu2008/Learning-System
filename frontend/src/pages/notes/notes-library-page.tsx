@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { FileText, FolderTree, Search } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { FileText, FolderTree, Search, Trash2 } from 'lucide-react'
+import type { NoteType, NoteTreeNode } from '@/types/notes'
 import { NoteDetailRenderer } from '@/components/note-detail-renderer'
 import { notesApi } from '@/lib/notes-api'
-import type { NoteTreeNode } from '@/types/notes'
 
 const MIN_WATCH_SECONDS_TO_REPORT = 3
+const MAIN_LIBRARY_NOTE_TYPES: NoteType[] = ['source_note', 'review_note']
 
 function TreeNodeItem({
   node,
@@ -50,8 +51,9 @@ function TreeNodeItem({
 }
 
 export function NotesLibraryPage() {
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [noteType, setNoteType] = useState('all')
+  const [noteType, setNoteType] = useState<NoteType | 'all'>('all')
   const [sourceFilter, setSourceFilter] = useState('all')
   const [selectedNoteId, setSelectedNoteId] = useState<number | null>(null)
   const activeNoteRef = useRef<number | null>(null)
@@ -72,19 +74,33 @@ export function NotesLibraryPage() {
     }
   }
 
-  const notesQuery = useQuery({ queryKey: ['notes'], queryFn: () => notesApi.listNotes() })
-  const treeQuery = useQuery({ queryKey: ['notes-tree'], queryFn: () => notesApi.getNotesTree() })
+  const notesQuery = useQuery({ queryKey: ['notes', 'library'], queryFn: () => notesApi.listNotes() })
+  const treeQuery = useQuery({ queryKey: ['notes-tree', 'library'], queryFn: () => notesApi.getNotesTree() })
   const noteDetailQuery = useQuery({
     queryKey: ['note-detail', selectedNoteId],
     queryFn: () => notesApi.getNoteDetail(selectedNoteId as number),
     enabled: selectedNoteId != null,
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: (noteId: number) => notesApi.deleteNote(noteId),
+    onSuccess: async (_, deletedNoteId) => {
+      if (selectedNoteId === deletedNoteId) {
+        setSelectedNoteId(null)
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['notes', 'library'] }),
+        queryClient.invalidateQueries({ queryKey: ['notes-tree', 'library'] }),
+        queryClient.invalidateQueries({ queryKey: ['note-detail', deletedNoteId] }),
+      ])
+    },
+  })
+
   const filteredNotes = useMemo(() => {
     const notes = notesQuery.data ?? []
     return notes.filter((note) => {
       const searchMatched = !search || note.title.toLowerCase().includes(search.toLowerCase()) || note.relative_path.toLowerCase().includes(search.toLowerCase())
-      const typeMatched = noteType === 'all' || note.note_type === noteType
+      const typeMatched = noteType === 'all' ? MAIN_LIBRARY_NOTE_TYPES.includes(note.note_type) : note.note_type === noteType
       const sourceMatched = sourceFilter === 'all' || (sourceFilter === 'linked' ? note.source_asset_id != null : note.source_asset_id == null)
       return searchMatched && typeMatched && sourceMatched
     })
@@ -130,12 +146,18 @@ export function NotesLibraryPage() {
     }
   }, [])
 
+  const handleDeleteNote = (noteId: number, title: string) => {
+    if (!window.confirm(`确认删除笔记《${title}》？此操作会同时删除对应文件。`)) return
+    deleteMutation.mutate(noteId)
+  }
+
   return (
-    <div className="grid gap-4 xl:grid-cols-[280px_360px_minmax(0,1fr)]">
-      <section className="fabric-panel min-h-[720px]">
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,280px)_minmax(0,360px)_minmax(0,1fr)]">
+      <section className="fabric-panel min-h-[720px] min-w-0 overflow-hidden">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-cloth-muted">Directory Tree</p>
           <h1 className="mt-1 font-serif text-2xl text-cloth-ink">笔记目录</h1>
+          <p className="mt-2 text-sm text-cloth-muted">主笔记库默认仅展示 source_note / review_note；summary 与 mindmap 请前往各自产物页面查看。</p>
         </div>
         <div className="mt-4 max-h-[620px] space-y-3 overflow-auto pr-1 scrollbar-thin">
           {treeQuery.data?.length ? (
@@ -148,22 +170,30 @@ export function NotesLibraryPage() {
         </div>
       </section>
 
-      <section className="fabric-panel min-h-[720px]">
+      <section className="fabric-panel min-h-[720px] min-w-0 overflow-hidden">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-cloth-muted">Note Library</p>
           <h2 className="mt-1 font-serif text-2xl text-cloth-ink">笔记库</h2>
         </div>
         <div className="mt-4 space-y-3">
+          {deleteMutation.isError ? <div className="rounded-xl border border-cloth-danger/40 bg-cloth-danger/10 p-3 text-sm text-cloth-ink">{String((deleteMutation.error as Error | null)?.message ?? '删除失败')}</div> : null}
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-cloth-muted" />
             <input value={search} onChange={(event) => setSearch(event.target.value)} className="fabric-input pl-10" placeholder="搜索标题或路径" />
           </label>
           <div className="grid gap-3 md:grid-cols-2">
-            <select value={noteType} onChange={(event) => setNoteType(event.target.value)} className="fabric-input">
-              <option value="all">全部 note_type</option>
+            <select
+              value={noteType}
+              onChange={(event) => {
+                const value = event.target.value
+                if (value === 'all' || value === 'source_note' || value === 'review_note') {
+                  setNoteType(value)
+                }
+              }}
+              className="fabric-input"
+            >
+              <option value="all">主笔记（默认）</option>
               <option value="source_note">source_note</option>
-              <option value="summary">summary</option>
-              <option value="mindmap">mindmap</option>
               <option value="review_note">review_note</option>
             </select>
             <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)} className="fabric-input">
@@ -177,16 +207,29 @@ export function NotesLibraryPage() {
           {filteredNotes.length ? (
             filteredNotes.map((note) => {
               const selected = note.id === selectedNoteId
+              const deleting = deleteMutation.isPending && deleteMutation.variables === note.id
               return (
-                <button key={note.id} type="button" onClick={() => setSelectedNoteId(note.id)} className={`block w-full rounded-xl border p-4 text-left ${selected ? 'border-cloth-accent/55 bg-white/85 shadow-panel' : 'border-cloth-line/70 bg-white/45 hover:bg-white/65'}`}>
+                <div key={note.id} className={`rounded-xl border p-4 ${selected ? 'border-cloth-accent/55 bg-white/85 shadow-panel' : 'border-cloth-line/70 bg-white/45 hover:bg-white/65'}`}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    <button type="button" onClick={() => setSelectedNoteId(note.id)} className="min-w-0 flex-1 text-left">
                       <p className="truncate text-sm font-semibold text-cloth-ink">{note.title}</p>
                       <p className="mt-1 truncate text-xs text-cloth-muted">{note.relative_path}</p>
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-cloth-panel px-2 py-1 text-xs text-cloth-muted">{note.note_type}</span>
+                      <button
+                        type="button"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-cloth-line/70 bg-white/80 text-cloth-muted transition hover:text-cloth-danger disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => handleDeleteNote(note.id, note.title)}
+                        disabled={deleting}
+                        aria-label={`删除 ${note.title}`}
+                        title="删除笔记"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
-                    <span className="rounded-full bg-cloth-panel px-2 py-1 text-xs text-cloth-muted">{note.note_type}</span>
                   </div>
-                </button>
+                </div>
               )
             })
           ) : (
@@ -195,7 +238,7 @@ export function NotesLibraryPage() {
         </div>
       </section>
 
-      <section className="fabric-panel min-h-[720px] min-w-0">
+      <section className="fabric-panel min-h-[720px] min-w-0 overflow-hidden">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-cloth-muted">Detail Renderer</p>
           <h2 className="mt-1 font-serif text-2xl text-cloth-ink">笔记详情</h2>

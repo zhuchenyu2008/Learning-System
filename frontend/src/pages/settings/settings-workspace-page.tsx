@@ -92,7 +92,7 @@ export function SettingsWorkspacePage() {
   return (
     <PagePlaceholder
       title="工作区与 Obsidian"
-      description="管理员可配置工作目录、注册策略与增强版 Obsidian 同步入口。若后端接口尚未完成，页面仅做安全降级展示。"
+      description="管理员可配置工作目录、注册策略与 Obsidian 同步入口。"
       className="space-y-4"
       actions={<SectionStatus status="本地 Vault 直写 + obsidian-headless" tone="success" />}
     >
@@ -144,15 +144,17 @@ export function SettingsWorkspacePage() {
                 disabled={!isAdmin}
               />
             </SettingsField>
-            <SettingsField label="allow_registration" hint="注册开关属于管理员级策略，普通用户仅可查看。">
-              <label className="inline-flex h-11 items-center gap-3 rounded-xl border border-cloth-line bg-white/60 px-3">
+            <SettingsField label="allow_registration">
+              <label className="fabric-switch-row">
+                <span className="text-sm text-cloth-ink">允许新用户注册</span>
                 <input
                   type="checkbox"
+                  role="switch"
                   checked={systemSettings.allow_registration}
                   onChange={(event) => setSystemSettings((current) => ({ ...current, allow_registration: event.target.checked }))}
                   disabled={!isAdmin}
+                  className="fabric-switch"
                 />
-                <span className="text-sm text-cloth-ink">允许新用户注册</span>
               </label>
             </SettingsField>
           </div>
@@ -165,18 +167,20 @@ export function SettingsWorkspacePage() {
       <PermissionGate allowed={isAdmin} reason="仅管理员可修改 Obsidian 设置与触发同步">
         <SettingsSection
           title="Obsidian 增强同步"
-          description="支持本地 Vault 直写，并提供 obsidian-headless 配置入口、Vault 标识与设备名。"
+          description="支持本地 Vault 直写，并提供 obsidian-headless 配置入口。"
           className="md:col-span-2 xl:col-span-3"
           actions={
             <>
-              <label className="inline-flex items-center gap-2 text-sm text-cloth-muted">
+              <label className="fabric-switch-row text-cloth-muted">
+                <span>启用 Obsidian 增强同步</span>
                 <input
                   type="checkbox"
+                  role="switch"
                   checked={obsidianSettings.enabled}
                   onChange={(event) => setObsidianSettings((current) => ({ ...current, enabled: event.target.checked }))}
                   disabled={!isAdmin}
+                  className="fabric-switch"
                 />
-                启用 Obsidian 增强同步
               </label>
               <PermissionButton
                 allowed={isAdmin}

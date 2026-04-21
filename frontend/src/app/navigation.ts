@@ -1,4 +1,10 @@
-import { BookOpenText, BrainCircuit, FolderKanban, Lock, NotebookPen, Settings2, ShieldCheck, Sparkles, UserCog, Workflow } from 'lucide-react'
+import {
+  BrainCircuit,
+  Lock,
+  NotebookPen,
+  Settings2,
+  ShieldCheck,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { UserRole } from '@/types/auth'
 
@@ -6,6 +12,7 @@ export interface NavLeaf {
   label: string
   path: string
   adminOnly?: boolean
+  hiddenForViewer?: boolean
 }
 
 export interface NavSection {
@@ -33,8 +40,9 @@ export const navSections: NavSection[] = [
     children: [
       { label: '总览', path: '/review/overview' },
       { label: '复习', path: '/review/session' },
+      { label: '卡片管理', path: '/review/cards-admin', adminOnly: true },
       { label: '知识点总结', path: '/review/summaries', adminOnly: true },
-      { label: '思维导图', path: '/review/mindmaps', adminOnly: true },
+      { label: '思维导图生成', path: '/review/mindmaps', adminOnly: true },
     ],
   },
   {
@@ -43,34 +51,23 @@ export const navSections: NavSection[] = [
     path: '/settings',
     children: [
       { label: 'AI 配置', path: '/settings/ai', adminOnly: true },
-      { label: '工作目录与同步', path: '/settings/workspace', adminOnly: true },
-      { label: '用户与审计', path: '/settings/users', adminOnly: true },
+      { label: '工作区与 Obsidian', path: '/settings/workspace', adminOnly: true },
+      { label: '用户与登录情况', path: '/settings/users', adminOnly: true, hiddenForViewer: true },
       { label: '导入导出', path: '/settings/import-export', adminOnly: true },
-      { label: '任务策略', path: '/settings/jobs', adminOnly: true },
+      { label: '任务与调度', path: '/settings/jobs', adminOnly: true },
     ],
   },
-]
-
-export const shellQuickLinks = [
-  { label: '工作区', icon: FolderKanban },
-  { label: 'AI 任务', icon: Workflow },
-  { label: '阅读体验', icon: BookOpenText },
-  { label: '织物主题', icon: Sparkles },
 ]
 
 export const roleMeta: Record<UserRole, { label: string; icon: LucideIcon; description: string }> = {
   admin: {
     label: '管理员',
     icon: ShieldCheck,
-    description: '可配置系统、导入资料并触发生成任务',
+    description: '可配置系统并触发生成任务',
   },
   viewer: {
     label: '普通用户',
     icon: Lock,
-    description: '可阅读内容并提交复习结果，管理操作保持禁用',
+    description: '可阅读内容并完成复习',
   },
 }
-
-export const userMenuItems = [
-  { label: '账户状态', icon: UserCog },
-]

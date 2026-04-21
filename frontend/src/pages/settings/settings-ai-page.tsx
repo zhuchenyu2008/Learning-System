@@ -16,15 +16,25 @@ const providerLabels: Record<ProviderType, string> = {
 }
 
 const defaultProviders: ProviderConfig[] = [
-  { provider_type: 'llm', base_url: '', api_key: '', model_name: '', extra_json: '', is_enabled: false },
-  { provider_type: 'embedding', base_url: '', api_key: '', model_name: '', extra_json: '', is_enabled: false },
-  { provider_type: 'stt', base_url: '', api_key: '', model_name: '', extra_json: '', is_enabled: false },
-  { provider_type: 'ocr', base_url: '', api_key: '', model_name: '', extra_json: '', is_enabled: false },
+  { provider_type: 'llm', base_url: '', api_key: '', api_key_masked: '', has_api_key: false, model_name: '', extra_json: '', is_enabled: false },
+  { provider_type: 'embedding', base_url: '', api_key: '', api_key_masked: '', has_api_key: false, model_name: '', extra_json: '', is_enabled: false },
+  { provider_type: 'stt', base_url: '', api_key: '', api_key_masked: '', has_api_key: false, model_name: '', extra_json: '', is_enabled: false },
+  { provider_type: 'ocr', base_url: '', api_key: '', api_key_masked: '', has_api_key: false, model_name: '', extra_json: '', is_enabled: false },
 ]
 
 function normalizeProviders(payload: SettingsAiPayload | null | undefined) {
   const current = payload?.providers ?? []
-  return defaultProviders.map((fallback) => current.find((item) => item.provider_type === fallback.provider_type) ?? fallback)
+  return defaultProviders.map((fallback) => {
+    const matched = current.find((item) => item.provider_type === fallback.provider_type)
+    if (!matched) return fallback
+    return {
+      ...fallback,
+      ...matched,
+      api_key: '',
+      api_key_masked: matched.api_key_masked ?? '',
+      has_api_key: matched.has_api_key ?? Boolean(matched.api_key_masked),
+    }
+  })
 }
 
 export function SettingsAiPage() {
@@ -126,14 +136,16 @@ export function SettingsAiPage() {
             description="OpenAI 兼容接口；支持 base URL、模型、密钥与额外 JSON 参数。"
             actions={
               <>
-                <label className="inline-flex items-center gap-2 text-sm text-cloth-muted">
+                <label className="fabric-switch-row inline-flex text-sm text-cloth-muted">
+                  <span>启用</span>
                   <input
                     type="checkbox"
+                    role="switch"
+                    className="fabric-switch"
                     checked={provider.is_enabled}
                     disabled={!isAdmin}
                     onChange={(event) => updateProvider(provider.provider_type, { is_enabled: event.target.checked })}
                   />
-                  启用
                 </label>
                 <PermissionButton
                   allowed={isAdmin}
@@ -166,13 +178,13 @@ export function SettingsAiPage() {
                   disabled={!isAdmin}
                 />
               </SettingsField>
-              <SettingsField label="API Key" hint="前端仅作为输入承载，不展示脱敏逻辑。">
+              <SettingsField label="API Key" hint={provider.has_api_key ? `已保存密钥：${provider.api_key_masked || '已脱敏'}` : '未设置密钥'}>
                 <input
                   className="fabric-input"
                   type="password"
                   value={provider.api_key ?? ''}
                   onChange={(event) => updateProvider(provider.provider_type, { api_key: event.target.value })}
-                  placeholder="sk-..."
+                  placeholder={provider.has_api_key ? '留空则保留现有密钥；输入新值则覆盖' : 'sk-...'}
                   disabled={!isAdmin}
                 />
               </SettingsField>

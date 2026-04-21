@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
@@ -84,6 +84,7 @@ async def test_review_service_bootstrap_grade_and_activity(session_factory, work
 
         first_card = cards[0]
         previous_due_at = first_card.due_at
+
         graded_card, review_log = await ReviewService.grade_card(
             session,
             card_id=first_card.id,
@@ -108,6 +109,36 @@ async def test_review_service_bootstrap_grade_and_activity(session_factory, work
             user=admin_user,
         )
         assert created_log.review_card_id == first_card.id
+
+        job = await ReviewService.create_review_card_job(
+            session,
+            note_ids=[note.id],
+            parent_job_id=99,
+            trigger="test",
+            source_job_type=JobType.NOTE_GENERATION.value,
+        )
+        result_payload = await ReviewService.execute_review_card_job(
+            session,
+            job_id=job.id,
+            note_ids=[note.id],
+            parent_job_id=99,
+            trigger="test",
+            source_job_type=JobType.NOTE_GENERATION.value,
+        )
+        assert result_payload["note_ids"] == [note.id]
+        assert result_payload["parent_job_id"] == 99
+        assert result_payload["trigger"] == "test"
+        assert result_payload["source_job_type"] == JobType.NOTE_GENERATION.value
+        assert result_payload["created_knowledge_points"] == 0
+        assert result_payload["created_cards"] == 0
+        assert result_payload["generation_mode"] == "fallback"
+        assert result_payload["ai_generated_knowledge_points"] == 0
+
+        persisted_job = await session.get(Job, job.id)
+        assert persisted_job is not None
+        assert persisted_job.status == "completed"
+        assert persisted_job.result_json["parent_job_id"] == 99
+        assert any(log["message"] == "review card generation pipeline started" for log in persisted_job.logs_json)
 
         logs = await ReviewService.list_review_logs(session, limit=10)
         assert len(logs) >= 2
