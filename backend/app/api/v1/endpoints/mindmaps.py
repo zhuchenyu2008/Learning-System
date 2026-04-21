@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -48,9 +48,9 @@ async def generate_mindmap(
         async_result = generate_mindmap_task.delay(job.id)
         await JobService.attach_celery_task(session, job, async_result.id)
         await JobService.append_log(session, job, "info", "mindmap generation queued", queue_status="queued")
-        artifact_id = 0
-        output_note_id = 0
-        relative_path = ""
+        artifact_id = None
+        output_note_id = None
+        relative_path = None
         status = "queued"
         celery_task_id = async_result.id
 
@@ -72,3 +72,15 @@ async def list_mindmaps(
 ) -> dict:
     artifacts = await ArtifactService.list_artifacts(session, ArtifactType.MINDMAP)
     return success_response([ArtifactListItem.model_validate(item).model_dump() for item in artifacts])
+
+
+@router.delete("/{artifact_id}")
+async def delete_mindmap(
+    artifact_id: int,
+    _: Annotated[User, Depends(require_admin)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> dict:
+    result = await ArtifactService.delete_artifact(session, ArtifactType.MINDMAP, artifact_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Mindmap artifact not found")
+    return success_response(result)

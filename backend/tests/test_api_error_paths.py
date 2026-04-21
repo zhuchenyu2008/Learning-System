@@ -48,6 +48,13 @@ async def test_sources_notes_jobs_error_paths_and_permissions(client, workspace_
     viewer_sources = await client.get("/api/v1/sources", headers=viewer_auth_headers)
     assert viewer_sources.status_code == 403
 
+    missing_source_delete = await client.delete("/api/v1/sources/99999", headers=auth_headers)
+    assert missing_source_delete.status_code == 404
+    assert missing_source_delete.json()["detail"] == "Source asset not found"
+
+    viewer_source_delete = await client.delete("/api/v1/sources/1", headers=viewer_auth_headers)
+    assert viewer_source_delete.status_code == 403
+
     note_id = await _prepare_generated_note(client, workspace_root, auth_headers)
 
     viewer_note_list = await client.get("/api/v1/notes", headers=viewer_auth_headers)

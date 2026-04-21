@@ -1,7 +1,8 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 
 interface MermaidRendererProps {
   chart: string
+  title?: string
 }
 
 type MermaidModule = typeof import('mermaid')
@@ -23,6 +24,7 @@ async function getMermaid() {
       securityLevel: 'strict',
       theme: 'neutral',
       fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+      suppressErrorRendering: true,
     })
     initialized = true
   }
@@ -30,19 +32,50 @@ async function getMermaid() {
   return mermaid
 }
 
-export function MermaidRenderer({ chart }: MermaidRendererProps) {
+function sanitizeMermaidChart(chart: string) {
+  const normalized = chart.replace(/\r\n/g, '\n').trim()
+  if (!normalized) {
+    return ''
+  }
+
+  const fencedMatch = normalized.match(/^```(?:\s*mermaid)?\s*\n?([\s\S]*?)\n?```$/i)
+  let sanitized = fencedMatch?.[1]?.trim() ?? normalized
+
+  sanitized = sanitized.replace(/^```\s*mermaid\s*$/gim, '').replace(/^```\s*$/gm, '').trim()
+
+  if (/^mermaid\s*$/i.test(sanitized)) {
+    return ''
+  }
+
+  if (/^mermaid\s*\n/i.test(sanitized)) {
+    sanitized = sanitized.replace(/^mermaid\s*\n/i, '').trim()
+  }
+
+  return sanitized
+}
+
+export function MermaidRenderer({ chart, title = 'Mermaid 图表' }: MermaidRendererProps) {
   const reactId = useId()
+  const sanitizedChart = useMemo(() => sanitizeMermaidChart(chart), [chart])
   const [svg, setSvg] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
 
+    if (!sanitizedChart) {
+      setSvg('')
+      setError('Mermaid 内容为空或格式无效')
+      return () => {
+        cancelled = true
+      }
+    }
+
     async function render() {
       try {
         const mermaid = await getMermaid()
         const elementId = `mermaid-${reactId.replace(/:/g, '-')}`
-        const result = await mermaid.render(elementId, chart)
+        const result = await mermaid.render(elementId, sanitizedChart)
         if (!cancelled) {
           setSvg(result.svg)
           setError(null)
@@ -59,15 +92,18 @@ export function MermaidRenderer({ chart }: MermaidRendererProps) {
     return () => {
       cancelled = true
     }
-  }, [chart, reactId])
+  }, [sanitizedChart, reactId])
 
   if (error) {
     return (
-      <div className="rounded-xl border border-cloth-warn/40 bg-cloth-warn/10 p-4 text-sm text-cloth-ink">
-        <p className="font-semibold">Mermaid 渲染失败</p>
+      <figure className="rounded-xl border border-cloth-warn/40 bg-cloth-warn/10 p-4 text-sm text-cloth-ink">
+        <figcaption className="font-semibold">{title} 渲染失败</figcaption>
         <p className="mt-2 text-cloth-muted">{error}</p>
-        <pre className="mt-3 overflow-x-auto rounded-lg bg-white/60 p-3 text-xs">{chart}</pre>
-      </div>
+        <details className="mt-3 rounded-lg bg-white/50 p-3">
+          <summary className="cursor-pointer text-xs font-medium text-cloth-muted">查看 Mermaid 源码</summary>
+          <pre className="mt-3 overflow-x-auto rounded-lg bg-white/60 p-3 text-xs">{sanitizedChart || chart}</pre>
+        </details>
+      </figure>
     )
   }
 

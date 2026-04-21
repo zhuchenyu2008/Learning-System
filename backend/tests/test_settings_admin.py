@@ -1,8 +1,11 @@
 import zipfile
+from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
@@ -10,7 +13,13 @@ from app.core.security import get_password_hash
 from app.db.base import Base
 from app.db.session import get_db_session
 from app.main import create_app
-from app.models.enums import UserRole
+from app.models.admin_entities import UserActivitySnapshot
+from app.models.ai_provider_config import AIProviderConfig
+from app.models.enums import NoteType, ProviderType, UserRole
+from app.models.note import Note
+from app.models.review_card import ReviewCard
+from app.models.review_log import ReviewLog
+from app.models.knowledge_point import KnowledgePoint
 from app.models.user import User
 
 
@@ -60,6 +69,215 @@ async def viewer_client(tmp_path: Path):
         yield async_client
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_existing_snapshot_is_backfilled_from_review_logs(client, session_factory):
+    login_response = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "ChangeMe123!"},
+    )
+    assert login_response.status_code == 200
+    token = login_response.json()["data"]["tokens"]["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async with session_factory() as session:
+        admin = (await session.execute(select(User).where(User.username == "admin"))).scalar_one()
+        note = Note(
+            title="legacy note",
+            relative_path="notes/legacy.md",
+            note_type=NoteType.SUMMARY,
+            content_hash="legacy-hash",
+            frontmatter_json={},
+        )
+        session.add(note)
+        await session.flush()
+
+        point = KnowledgePoint(
+            note_id=note.id,
+            title="legacy point",
+            content_md="legacy content",
+            embedding_vector=None,
+            tags_json={},
+            summary_text="legacy summary",
+            source_anchor="legacy-point",
+        )
+        session.add(point)
+        await session.flush()
+
+        card = ReviewCard(
+            knowledge_point_id=point.id,
+            state_json={},
+            due_at=datetime.now(timezone.utc),
+            last_reviewed_at=None,
+            suspended=False,
+        )
+        session.add(card)
+        await session.flush()
+
+        review_log = ReviewLog(
+            user_id=admin.id,
+            review_card_id=card.id,
+            rating=3,
+            duration_seconds=42,
+            note="legacy review",
+        )
+        session.add(review_log)
+        await session.flush()
+
+        existing_snapshot = (
+            await session.execute(select(UserActivitySnapshot).where(UserActivitySnapshot.user_id == admin.id))
+        ).scalar_one()
+        existing_snapshot.total_watch_seconds = 0
+        existing_snapshot.review_count = 0
+        existing_snapshot.page_view_count = 0
+        existing_snapshot.note_view_count = 0
+        existing_snapshot.review_watch_seconds = 0
+        existing_snapshot.last_activity_at = admin.last_login_at
+        existing_snapshot.last_event_type = "login"
+        await session.commit()
+
+    activity = await client.get("/api/v1/admin/user-activity", headers=headers)
+    assert activity.status_code == 200
+    first = activity.json()["data"][0]
+    assert first["review_count"] == 1
+    assert first["review_watch_seconds"] == 42
+    assert first["total_watch_seconds"] == 42
+    assert first["last_event_type"] in {"login", "review_log"}
+
+
+@pytest.mark.asyncio
+async def test_user_activity_is_sorted_by_recent_non_zero_activity(client, session_factory):
+    login_response = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "ChangeMe123!"},
+    )
+    assert login_response.status_code == 200
+    token = login_response.json()["data"]["tokens"]["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async with session_factory() as session:
+        users = []
+        for index in range(1, 8):
+            user = User(
+                username=f"viewer-{index}",
+                email=f"viewer-{index}@example.com",
+                password_hash=get_password_hash("ChangeMe123!"),
+                role=UserRole.VIEWER,
+                is_active=True,
+                last_login_at=datetime(2026, 4, 18, 8, index, tzinfo=timezone.utc),
+            )
+            session.add(user)
+            users.append(user)
+        await session.flush()
+
+        active_user = users[0]
+        for user in users[1:]:
+            snapshot = UserActivitySnapshot(
+                user_id=user.id,
+                total_watch_seconds=0,
+                review_count=0,
+                page_view_count=0,
+                note_view_count=0,
+                review_watch_seconds=0,
+                last_activity_at=datetime(2026, 4, 18, 8, 0, tzinfo=timezone.utc),
+                last_event_type="login",
+            )
+            session.add(snapshot)
+
+        active_snapshot = UserActivitySnapshot(
+            user_id=active_user.id,
+            total_watch_seconds=27,
+            review_count=1,
+            page_view_count=1,
+            note_view_count=1,
+            review_watch_seconds=12,
+            last_activity_at=datetime(2026, 4, 19, 1, 0, tzinfo=timezone.utc),
+            last_event_type="note_watch",
+        )
+        session.add(active_snapshot)
+        await session.commit()
+
+    activity = await client.get("/api/v1/admin/user-activity", headers=headers)
+    assert activity.status_code == 200
+    data = activity.json()["data"]
+    active_index = next(index for index, item in enumerate(data) if item["username"] == "viewer-1")
+    zero_viewer_indexes = [index for index, item in enumerate(data) if item["username"] in {f"viewer-{n}" for n in range(2, 8)}]
+    assert active_index < min(zero_viewer_indexes)
+    assert active_index < 6
+    assert data[active_index]["total_watch_seconds"] == 27
+    assert data[active_index]["last_event_type"] == "note_watch"
+
+
+@pytest.mark.asyncio
+async def test_user_activity_prefers_non_zero_rows_over_recent_login_only_rows(client, session_factory):
+    login_response = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "ChangeMe123!"},
+    )
+    assert login_response.status_code == 200
+    token = login_response.json()["data"]["tokens"]["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async with session_factory() as session:
+        active_user = User(
+            username="active-viewer",
+            email="active-viewer@example.com",
+            password_hash=get_password_hash("ChangeMe123!"),
+            role=UserRole.VIEWER,
+            is_active=True,
+            last_login_at=datetime(2026, 4, 18, 8, 0, tzinfo=timezone.utc),
+        )
+        session.add(active_user)
+        await session.flush()
+        session.add(
+            UserActivitySnapshot(
+                user_id=active_user.id,
+                total_watch_seconds=14,
+                review_count=1,
+                page_view_count=1,
+                note_view_count=1,
+                review_watch_seconds=8,
+                last_activity_at=datetime(2026, 4, 18, 8, 5, tzinfo=timezone.utc),
+                last_event_type="note_watch",
+            )
+        )
+
+        for index in range(1, 8):
+            user = User(
+                username=f"recent-zero-{index}",
+                email=f"recent-zero-{index}@example.com",
+                password_hash=get_password_hash("ChangeMe123!"),
+                role=UserRole.VIEWER,
+                is_active=True,
+                last_login_at=datetime(2026, 4, 19, 9, index, tzinfo=timezone.utc),
+            )
+            session.add(user)
+            await session.flush()
+            session.add(
+                UserActivitySnapshot(
+                    user_id=user.id,
+                    total_watch_seconds=0,
+                    review_count=0,
+                    page_view_count=0,
+                    note_view_count=0,
+                    review_watch_seconds=0,
+                    last_activity_at=user.last_login_at,
+                    last_event_type="login",
+                )
+            )
+
+        await session.commit()
+
+    activity = await client.get("/api/v1/admin/user-activity", headers=headers)
+    assert activity.status_code == 200
+    data = activity.json()["data"]
+    active_index = next(index for index, item in enumerate(data) if item["username"] == "active-viewer")
+    recent_zero_indexes = [index for index, item in enumerate(data) if str(item["username"]).startswith("recent-zero-")]
+    assert active_index < min(recent_zero_indexes)
+    assert active_index < 6
+    assert data[active_index]["total_watch_seconds"] == 14
+    assert data[active_index]["last_event_type"] == "note_watch"
 
 
 @pytest.mark.asyncio
@@ -170,10 +388,18 @@ async def test_settings_and_admin_main_chain(client, auth_headers, tmp_path, mon
     )
     assert ai_put.status_code == 200
     assert ai_put.json()["data"]["providers"][0]["provider_type"] == "llm"
+    assert ai_put.json()["data"]["providers"][0]["api_key"] == ""
+    assert ai_put.json()["data"]["providers"][0]["has_api_key"] is True
+    assert "sk-test" not in ai_put.text
 
     ai_get = await client.get("/api/v1/settings/ai", headers=auth_headers)
     assert ai_get.status_code == 200
-    assert ai_get.json()["data"]["providers"][0]["api_key"] == "sk-test"
+    assert ai_get.json()["data"]["providers"][0]["api_key"] == ""
+    assert ai_get.json()["data"]["providers"][0]["has_api_key"] is True
+    assert ai_get.json()["data"]["providers"][0]["api_key_masked"]
+    assert ai_get.json()["data"]["providers"][0]["api_key_masked"] != "sk-test"
+    assert "*" in ai_get.json()["data"]["providers"][0]["api_key_masked"]
+    assert "sk-test" not in ai_get.text
 
     obsidian_put = await client.put(
         "/api/v1/settings/obsidian",
@@ -208,6 +434,310 @@ async def test_settings_and_admin_main_chain(client, auth_headers, tmp_path, mon
     )
     assert provider_test.status_code == 200
     assert provider_test.json()["data"]["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_ai_settings_update_preserves_old_key_and_replaces_when_new_key_provided(client, auth_headers, session_factory):
+    initial_put = await client.put(
+        "/api/v1/settings/ai",
+        json={
+            "providers": [
+                {
+                    "provider_type": "embedding",
+                    "base_url": "https://example.com/v1",
+                    "api_key": "sk-old-secret",
+                    "model_name": "text-embedding-demo",
+                    "extra_json": {},
+                    "is_enabled": True,
+                }
+            ]
+        },
+        headers=auth_headers,
+    )
+    assert initial_put.status_code == 200
+
+    preserve_put = await client.put(
+        "/api/v1/settings/ai",
+        json={
+            "providers": [
+                {
+                    "provider_type": "embedding",
+                    "base_url": "https://example.com/v2",
+                    "api_key": "",
+                    "model_name": "text-embedding-demo-2",
+                    "extra_json": {"dimensions": 1024},
+                    "is_enabled": True,
+                }
+            ]
+        },
+        headers=auth_headers,
+    )
+    assert preserve_put.status_code == 200
+    assert "sk-old-secret" not in preserve_put.text
+
+    async with session_factory() as session:
+        embedding = (
+            await session.execute(select(AIProviderConfig).where(AIProviderConfig.provider_type == ProviderType.EMBEDDING.value))
+        ).scalar_one()
+        assert embedding.base_url == "https://example.com/v2"
+        assert embedding.model_name == "text-embedding-demo-2"
+        assert embedding.api_key_encrypted == "sk-old-secret"
+        assert embedding.extra_json == {"dimensions": 1024}
+
+    replace_put = await client.put(
+        "/api/v1/settings/ai",
+        json={
+            "providers": [
+                {
+                    "provider_type": "embedding",
+                    "base_url": "https://example.com/v3",
+                    "api_key": "sk-new-secret",
+                    "model_name": "text-embedding-demo-3",
+                    "extra_json": {},
+                    "is_enabled": False,
+                }
+            ]
+        },
+        headers=auth_headers,
+    )
+    assert replace_put.status_code == 200
+    assert replace_put.json()["data"]["providers"][0]["api_key"] == ""
+    assert replace_put.json()["data"]["providers"][0]["has_api_key"] is True
+    assert "sk-new-secret" not in replace_put.text
+
+    async with session_factory() as session:
+        embedding = (
+            await session.execute(select(AIProviderConfig).where(AIProviderConfig.provider_type == ProviderType.EMBEDDING.value))
+        ).scalar_one()
+        assert embedding.base_url == "https://example.com/v3"
+        assert embedding.model_name == "text-embedding-demo-3"
+        assert embedding.api_key_encrypted == "sk-new-secret"
+        assert embedding.is_enabled is False
+
+
+@pytest.mark.asyncio
+async def test_provider_test_supports_stt_and_ocr(client, auth_headers, monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    original_post = AsyncClient.post
+
+    async def fake_post(self, url, *args, **kwargs):  # noqa: ANN001
+        if isinstance(url, str) and url.startswith("https://api.siliconflow.cn/"):
+            calls.append((url, "json" if "json" in kwargs else "multipart"))
+
+            class Response:
+                status_code = 200
+                is_success = True
+
+            return Response()
+        return await original_post(self, url, *args, **kwargs)
+
+    monkeypatch.setattr("httpx.AsyncClient.post", fake_post)
+
+    stt_response = await client.post(
+        "/api/v1/settings/test-provider",
+        json={
+            "provider_type": "stt",
+            "base_url": "https://api.siliconflow.cn/v1",
+            "api_key": "sk-test",
+            "model_name": "FunAudioLLM/SenseVoiceSmall",
+        },
+        headers=auth_headers,
+    )
+    assert stt_response.status_code == 200
+
+    ocr_response = await client.post(
+        "/api/v1/settings/test-provider",
+        json={
+            "provider_type": "ocr",
+            "base_url": "https://api.siliconflow.cn/v1",
+            "api_key": "sk-test",
+            "model_name": "deepseek-ai/DeepSeek-OCR",
+        },
+        headers=auth_headers,
+    )
+    assert ocr_response.status_code == 200
+
+    assert calls[0][0] == "https://api.siliconflow.cn/v1/audio/transcriptions"
+    assert calls[0][1] == "multipart"
+    assert calls[1][0] == "https://api.siliconflow.cn/v1/chat/completions"
+    assert calls[1][1] == "json"
+
+
+@pytest.mark.asyncio
+async def test_text_markdown_and_docx_uploads_can_generate_note(client, workspace_root, auth_headers, session_factory, monkeypatch):
+    def make_docx_bytes(text: str) -> bytes:
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(
+                "[Content_Types].xml",
+                """<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>
+<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">
+  <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>
+  <Default Extension=\"xml\" ContentType=\"application/xml\"/>
+  <Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>
+</Types>""",
+            )
+            archive.writestr(
+                "_rels/.rels",
+                """<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>
+<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">
+  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>
+</Relationships>""",
+            )
+            archive.writestr(
+                "word/document.xml",
+                f"""<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>
+<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">
+  <w:body>
+    <w:p><w:r><w:t>{text}</w:t></w:r></w:p>
+  </w:body>
+</w:document>""",
+            )
+        return buffer.getvalue()
+
+    async with session_factory() as session:
+        session.add_all(
+            [
+                AIProviderConfig(
+                    provider_type=ProviderType.LLM.value,
+                    base_url="https://example.com/v1",
+                    api_key_encrypted="sk-test",
+                    model_name="demo-model",
+                    extra_json={},
+                    is_enabled=True,
+                ),
+                AIProviderConfig(
+                    provider_type=ProviderType.EMBEDDING.value,
+                    base_url="https://example.com/v1",
+                    api_key_encrypted="sk-embed",
+                    model_name="demo-embed",
+                    extra_json={},
+                    is_enabled=True,
+                ),
+            ]
+        )
+        await session.commit()
+
+    class MockChatResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": [
+                                {"type": "text", "text": '{"title":"结构化总结","subject":"未分类","markdown_body":"## 结构化总结\\n\\n- 关键知识点已提取","warnings":[],"confidence":0.8,"summary":"关键知识点已提取"}'}
+                            ]
+                        }
+                    }
+                ]
+            }
+
+    original_post = AsyncClient.post
+
+    async def fake_post(self, url, *args, **kwargs):  # noqa: ANN001
+        if isinstance(url, str) and url == "https://example.com/v1/chat/completions":
+            return MockChatResponse()
+        if isinstance(url, str) and url == "https://example.com/v1/embeddings":
+            inputs = kwargs.get("json", {}).get("input", [])
+            data = [{"index": idx, "embedding": [1.0, 0.0]} for idx, _ in enumerate(inputs)]
+            class MockEmbeddingResponse:
+                def raise_for_status(self):
+                    return None
+
+                def json(self):
+                    return {"model": "demo-embed", "data": data, "usage": {"prompt_tokens": 1, "total_tokens": 1}}
+            return MockEmbeddingResponse()
+        return await original_post(self, url, *args, **kwargs)
+
+    monkeypatch.setattr("httpx.AsyncClient.post", fake_post)
+
+    txt_upload_response = await client.post(
+        "/api/v1/sources/upload",
+        files={
+            "file": (
+                "lesson.txt",
+                "TXT 学习资料\n监督学习与无监督学习".encode("utf-8"),
+                "text/plain",
+            )
+        },
+        data={"upload_dir": "uploads/sources"},
+        headers=auth_headers,
+    )
+    assert txt_upload_response.status_code == 200
+    txt_asset = txt_upload_response.json()["data"]
+    assert txt_asset["file_type"] == "text"
+
+    md_upload_response = await client.post(
+        "/api/v1/sources/upload",
+        files={
+            "file": (
+                "lesson.md",
+                "# Markdown 学习资料\n\n矩阵分解与降维".encode("utf-8"),
+                "text/markdown",
+            )
+        },
+        data={"upload_dir": "uploads/sources"},
+        headers=auth_headers,
+    )
+    assert md_upload_response.status_code == 200
+    md_asset = md_upload_response.json()["data"]
+    assert md_asset["file_type"] == "markdown"
+
+    docx_upload_response = await client.post(
+        "/api/v1/sources/upload",
+        files={
+            "file": (
+                "lesson.docx",
+                make_docx_bytes("DOCX 学习资料\n线性代数与概率论"),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        data={"upload_dir": "uploads/sources"},
+        headers=auth_headers,
+    )
+    assert docx_upload_response.status_code == 200
+    docx_asset = docx_upload_response.json()["data"]
+    assert docx_asset["file_type"] == "text"
+
+    generate_response = await client.post(
+        "/api/v1/notes/generate",
+        json={"source_asset_ids": [txt_asset["id"], md_asset["id"], docx_asset["id"]], "note_directory": "notes/generated"},
+        headers=auth_headers,
+    )
+    assert generate_response.status_code == 200
+    written_paths = generate_response.json()["data"]["written_paths"]
+    assert len(written_paths) == 3
+
+    for written_path in written_paths:
+        note_path = Path(workspace_root) / written_path
+        assert note_path.exists()
+        content = note_path.read_text(encoding="utf-8")
+        if written_path.endswith(".md") and "lesson" in Path(written_path).name:
+            assert "AI 整理笔记" in content
+
+    txt_content = (Path(workspace_root) / written_paths[0]).read_text(encoding="utf-8")
+    md_content = (Path(workspace_root) / written_paths[1]).read_text(encoding="utf-8")
+    docx_content = (Path(workspace_root) / written_paths[2]).read_text(encoding="utf-8")
+    combined_content = "\n".join([txt_content, md_content, docx_content])
+    assert "TXT 学习资料" in combined_content
+    assert "监督学习与无监督学习" in combined_content
+    assert "Markdown 学习资料" in combined_content
+    assert "矩阵分解与降维" in combined_content
+    assert "DOCX 学习资料" in combined_content
+    assert "线性代数与概率论" in combined_content
+    assert "规范化文本摘录" in combined_content
+
+    jobs_response = await client.get("/api/v1/jobs", headers=auth_headers)
+    assert jobs_response.status_code == 200
+    note_jobs = [job for job in jobs_response.json()["data"] if job["job_type"] == "note_generation"]
+    assert note_jobs
+    latest_job = note_jobs[0]
+    stages = {log.get("stage") for log in latest_job["logs_json"] if log.get("stage")}
+    assert {"ingest", "extract", "normalize", "generate", "write"}.issubset(stages)
 
     users = await client.get("/api/v1/admin/users", headers=auth_headers)
     assert users.status_code == 200

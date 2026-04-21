@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileStack, FileText, Sparkles } from 'lucide-react'
+import { Eye, FileStack, FileText, Sparkles, Trash2 } from 'lucide-react'
+import { NoteDetailRenderer } from '@/components/note-detail-renderer'
 import { EmptyStateCard, ErrorStateCard, LoadingStateCard } from '@/components/settings-section'
 import { PermissionButton, PermissionGate } from '@/components/permission-gate'
 import { notesApi } from '@/lib/notes-api'
 import { reviewApi } from '@/lib/review-api'
+import { getArtifactOutputNoteId, getArtifactStatusMessage, normalizeArtifactJobStatus } from '@/pages/review/artifact-job-status'
 import { useAuthStore } from '@/stores/auth-store'
-import type { ArtifactScopeType } from '@/types/notes'
+import type { ArtifactScopeType, NoteDetail } from '@/types/notes'
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
@@ -18,9 +20,21 @@ export function ReviewSummariesPage() {
   const [scope, setScope] = useState<ArtifactScopeType>('manual')
   const [promptExtra, setPromptExtra] = useState('')
   const [selectedNoteIds, setSelectedNoteIds] = useState<number[]>([])
+  const [selectedArtifactId, setSelectedArtifactId] = useState<number | null>(null)
+  const [activeJob, setActiveJob] = useState<import('@/types/notes').ArtifactGenerateResult | null>(null)
 
   const summariesQuery = useQuery({ queryKey: ['summaries'], queryFn: () => reviewApi.listSummaries() })
-  const notesQuery = useQuery({ queryKey: ['notes'], queryFn: () => notesApi.listNotes() })
+  const notesQuery = useQuery({ queryKey: ['notes', 'artifacts'], queryFn: () => notesApi.listNotes({ includeArtifacts: true }) })
+  const jobQuery = useQuery({
+    queryKey: ['job', 'summary-artifact', activeJob?.job_id],
+    queryFn: () => reviewApi.getJob(activeJob!.job_id),
+    enabled: activeJob != null,
+    refetchInterval: (query) => {
+      const currentJob = query.state.data
+      const status = normalizeArtifactJobStatus(currentJob?.status ?? activeJob?.status)
+      return status === 'completed' || status === 'failed' ? false : 1500
+    },
+  })
 
   const generateMutation = useMutation({
     mutationFn: () =>
@@ -29,9 +43,27 @@ export function ReviewSummariesPage() {
         note_ids: selectedNoteIds,
         prompt_extra: promptExtra.trim() || null,
       }),
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       setPromptExtra('')
       setSelectedNoteIds([])
+      setActiveJob(result)
+      if (result.artifact_id != null) {
+        setSelectedArtifactId(result.artifact_id)
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['summaries'] }),
+        queryClient.invalidateQueries({ queryKey: ['notes'] }),
+        queryClient.invalidateQueries({ queryKey: ['jobs'] }),
+      ])
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (artifactId: number) => reviewApi.deleteSummary(artifactId),
+    onSuccess: async (_, deletedArtifactId) => {
+      if (selectedArtifactId === deletedArtifactId) {
+        setSelectedArtifactId(null)
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['summaries'] }),
         queryClient.invalidateQueries({ queryKey: ['notes'] }),
@@ -43,9 +75,47 @@ export function ReviewSummariesPage() {
     () => (notesQuery.data ?? []).filter((note) => note.note_type === 'summary'),
     [notesQuery.data],
   )
+  const selectedArtifact = useMemo(
+    () => (summariesQuery.data ?? []).find((artifact) => artifact.id === selectedArtifactId) ?? summariesQuery.data?.[0] ?? null,
+    [summariesQuery.data, selectedArtifactId],
+  )
+  const selectedOutputNoteId = selectedArtifact?.output_note_id ?? getArtifactOutputNoteId(jobQuery.data ?? null, activeJob)
+
+  const generateStatus = useMemo(
+    () => getArtifactStatusMessage('总结', jobQuery.data ?? null, activeJob),
+    [activeJob, jobQuery.data],
+  )
+
+  useEffect(() => {
+    if (!activeJob) return
+    const status = normalizeArtifactJobStatus(jobQuery.data?.status ?? activeJob.status)
+    if (status === 'completed') {
+      const artifactId = (jobQuery.data?.result_json?.artifact_id as number | undefined) ?? activeJob.artifact_id
+      if (artifactId != null) {
+        setSelectedArtifactId(artifactId)
+      }
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['summaries'] }),
+        queryClient.invalidateQueries({ queryKey: ['notes'] }),
+      ])
+    }
+  }, [activeJob, jobQuery.data, queryClient])
+
+  const outputNoteQuery = useQuery({
+    queryKey: ['note-detail', 'summary-output', selectedOutputNoteId],
+    queryFn: () => notesApi.getNoteDetail(selectedOutputNoteId as number),
+    enabled: selectedOutputNoteId != null,
+  })
 
   const toggleNote = (noteId: number) => {
     setSelectedNoteIds((current) => (current.includes(noteId) ? current.filter((id) => id !== noteId) : [...current, noteId]))
+  }
+
+  const selectedNote = outputNoteQuery.data as NoteDetail | undefined
+
+  const handleDeleteArtifact = (artifactId: number) => {
+    if (!window.confirm(`确认删除总结产物 #${artifactId}？此操作会同时删除输出笔记与文件。`)) return
+    deleteMutation.mutate(artifactId)
   }
 
   return (
@@ -55,7 +125,7 @@ export function ReviewSummariesPage() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cloth-accent">Summary Generator</p>
             <h1 className="font-serif text-3xl text-cloth-ink">知识点总结</h1>
-            <p className="mt-2 max-w-3xl text-sm text-cloth-muted">展示已有 summary 产物，并支持管理员按全部笔记或指定笔记范围手动触发新总结。</p>
+            <p className="mt-2 max-w-3xl text-sm text-cloth-muted">查看 summary 产物，并支持管理员手动生成。</p>
           </div>
           <PermissionButton
             allowed={isAdmin}
@@ -68,24 +138,38 @@ export function ReviewSummariesPage() {
           </PermissionButton>
         </div>
 
-        {(summariesQuery.isError || generateMutation.isError) ? (
+        {(summariesQuery.isError || generateMutation.isError || outputNoteQuery.isError || deleteMutation.isError) ? (
           <ErrorStateCard
             title="总结任务状态异常"
-            description={String((summariesQuery.error as Error | null)?.message ?? (generateMutation.error as Error | null)?.message ?? '加载失败')}
+            description={String(
+              (summariesQuery.error as Error | null)?.message ??
+                (generateMutation.error as Error | null)?.message ??
+                (outputNoteQuery.error as Error | null)?.message ??
+                (deleteMutation.error as Error | null)?.message ??
+                '加载失败',
+            )}
           />
         ) : null}
-        {generateMutation.data ? (
-          <div className="rounded-xl border border-cloth-success/40 bg-cloth-success/10 p-3 text-sm text-cloth-ink">
-            已创建总结任务 #{generateMutation.data.job_id}，输出笔记 #{generateMutation.data.output_note_id}（{generateMutation.data.relative_path}）。
+        {generateStatus ? (
+          <div
+            className={`rounded-xl border p-3 text-sm ${
+              generateStatus.tone === 'success'
+                ? 'border-cloth-success/40 bg-cloth-success/10 text-cloth-ink'
+                : generateStatus.tone === 'error'
+                  ? 'border-red-300 bg-red-50 text-red-700'
+                  : 'border-cloth-accent/30 bg-cloth-panel/60 text-cloth-ink'
+            }`}
+          >
+            {generateStatus.text}
           </div>
         ) : null}
 
-        <div className="grid gap-4 xl:grid-cols-[1.15fr_1.85fr]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1.85fr)]">
           <PermissionGate allowed={isAdmin} reason="仅管理员可提交生成请求">
-            <section className="fabric-card space-y-4">
+            <section className="fabric-card fabric-panel-stitched space-y-4">
               <div>
                 <p className="text-sm font-semibold text-cloth-ink">手动生成</p>
-                <p className="mt-1 text-sm text-cloth-muted">scope 固定支持 manual / scheduled，note_ids 留空则表示全部笔记。</p>
+                <p className="mt-1 text-sm text-cloth-muted">支持 manual / scheduled；不选笔记则默认全部。</p>
               </div>
 
               <label className="block space-y-2">
@@ -117,7 +201,7 @@ export function ReviewSummariesPage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-cloth-ink">笔记范围选择</p>
-                <p className="mt-1 text-sm text-cloth-muted">可选任意笔记作为总结输入范围，支持多选。</p>
+                <p className="mt-1 text-sm text-cloth-muted">支持多选。</p>
               </div>
               <FileStack className="h-5 w-5 text-cloth-accent" />
             </div>
@@ -128,9 +212,9 @@ export function ReviewSummariesPage() {
                 (notesQuery.data ?? []).map((note) => {
                   const selected = selectedNoteIds.includes(note.id)
                   return (
-                    <label key={note.id} className={`block rounded-xl border p-4 text-sm ${selected ? 'border-cloth-accent/60 bg-white/80' : 'border-cloth-line/70 bg-white/45'}`}>
+                    <label key={note.id} className={`fabric-select-card ${selected ? 'is-selected' : ''}`} data-selected={selected ? 'true' : 'false'}>
                       <div className="flex items-start gap-3">
-                        <input type="checkbox" checked={selected} onChange={() => toggleNote(note.id)} disabled={!isAdmin} className="mt-1" />
+                        <input type="checkbox" checked={selected} onChange={() => toggleNote(note.id)} disabled={!isAdmin} className="fabric-checkbox mt-1" />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
@@ -152,51 +236,79 @@ export function ReviewSummariesPage() {
         </div>
       </section>
 
-      <section className="fabric-panel">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-cloth-muted">Summary Artifacts</p>
-            <h2 className="mt-1 font-serif text-2xl text-cloth-ink">已有总结产物</h2>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+        <section className="fabric-panel min-h-[680px] min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-cloth-muted">Summary Artifacts</p>
+              <h2 className="mt-1 font-serif text-2xl text-cloth-ink">产物列表</h2>
+            </div>
+            <FileText className="h-5 w-5 text-cloth-accent" />
           </div>
-          <FileText className="h-5 w-5 text-cloth-accent" />
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {summariesQuery.isLoading ? (
-            Array.from({ length: 3 }).map((_, index) => (
-              <LoadingStateCard key={index} title="正在加载总结产物" description="稍候将展示最近生成的总结结果。" />
-            ))
-          ) : (summariesQuery.data ?? []).length ? (
-            (summariesQuery.data ?? []).map((artifact) => {
-              const linkedNote = summaryNotes.find((note) => note.id === artifact.output_note_id)
-              return (
-                <article key={artifact.id} className="fabric-card fabric-glow space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-cloth-ink">产物 #{artifact.id}</p>
-                    <span className="rounded-full bg-cloth-panel px-2 py-1 text-xs text-cloth-muted">{artifact.status}</span>
-                  </div>
-                  <div className="space-y-1 text-sm text-cloth-muted">
-                    <p>scope: {artifact.scope_type}</p>
-                    <p>note_ids: {artifact.note_ids_json.length ? artifact.note_ids_json.join(', ') : '全部笔记'}</p>
-                    <p>创建于：{formatDateTime(artifact.created_at)}</p>
-                  </div>
-                  {artifact.prompt_extra ? <p className="rounded-xl border border-cloth-line/60 bg-white/50 p-3 text-sm leading-6 text-cloth-ink">提示词：{artifact.prompt_extra}</p> : null}
-                  {linkedNote ? (
-                    <div className="rounded-xl border border-cloth-line/70 bg-white/55 p-3 text-sm text-cloth-ink">
-                      <p className="font-semibold">输出笔记</p>
-                      <p className="mt-1 line-clamp-2 leading-6">{linkedNote.title}</p>
-                      <p className="mt-1 break-all text-xs text-cloth-muted">{linkedNote.relative_path}</p>
+          <div className="mt-4 space-y-3">
+            {summariesQuery.isLoading ? (
+              <LoadingStateCard title="正在加载总结产物" description="稍候将展示最近生成的总结结果。" />
+            ) : (summariesQuery.data ?? []).length ? (
+              (summariesQuery.data ?? []).map((artifact) => {
+                const active = artifact.id === selectedArtifact?.id
+                const linkedNote = summaryNotes.find((note) => note.id === artifact.output_note_id)
+                const deleting = deleteMutation.isPending && deleteMutation.variables === artifact.id
+                return (
+                  <div
+                    key={artifact.id}
+                    className={`rounded-xl border p-4 ${active ? 'border-cloth-accent/55 bg-white/85 shadow-panel fabric-glow' : 'border-cloth-line/70 bg-white/45 hover:bg-white/65'}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <button type="button" onClick={() => setSelectedArtifactId(artifact.id)} className="min-w-0 flex-1 text-left">
+                        <p className="text-sm font-semibold text-cloth-ink">产物 #{artifact.id}</p>
+                        <p className="mt-2 text-xs text-cloth-muted">scope: {artifact.scope_type}</p>
+                        <p className="mt-1 text-xs text-cloth-muted">{artifact.note_ids_json.length ? `note_ids: ${artifact.note_ids_json.join(', ')}` : '全部笔记'}</p>
+                        <p className="mt-1 text-xs text-cloth-muted">输出：{linkedNote?.title ?? `#${artifact.output_note_id ?? '--'}`}</p>
+                        <p className="mt-1 text-xs text-cloth-muted">创建于 {formatDateTime(artifact.created_at)}</p>
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full bg-cloth-panel px-2 py-1 text-xs text-cloth-muted">{artifact.status}</span>
+                        <button
+                          type="button"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-cloth-line/70 bg-white/80 text-cloth-muted transition hover:text-cloth-danger disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={() => handleDeleteArtifact(artifact.id)}
+                          disabled={deleting}
+                          aria-label={`删除总结产物 ${artifact.id}`}
+                          title="删除总结产物"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
-                  ) : (
-                    <div className="rounded-xl border border-cloth-line/70 bg-white/55 p-3 text-sm text-cloth-muted">输出笔记 #{artifact.output_note_id ?? '--'} 尚未在前端笔记列表中命中。</div>
-                  )}
-                </article>
-              )
-            })
-          ) : (
-            <EmptyStateCard title="暂无总结产物" description="当后台总结任务产出结果后，这里会自动显示最新内容。" />
-          )}
-        </div>
-      </section>
+                    {artifact.prompt_extra ? <p className="mt-3 rounded-xl border border-cloth-line/60 bg-white/65 p-3 text-xs leading-6 text-cloth-ink">提示词：{artifact.prompt_extra}</p> : null}
+                  </div>
+                )
+              })
+            ) : (
+              <EmptyStateCard title="暂无总结产物" description="当后台总结任务产出结果后，这里会自动显示最新内容。" />
+            )}
+          </div>
+        </section>
+
+        <section className="fabric-panel min-w-0 min-h-[680px]">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-cloth-muted">Summary Preview</p>
+              <h2 className="mt-1 font-serif text-2xl text-cloth-ink">产物详情</h2>
+            </div>
+            <Eye className="h-5 w-5 text-cloth-accent" />
+          </div>
+          <div className="mt-4 min-w-0">
+            {outputNoteQuery.isLoading ? (
+              <LoadingStateCard title="正在加载总结详情" description="系统正在读取对应输出笔记内容。" />
+            ) : selectedNote ? (
+              <NoteDetailRenderer note={selectedNote} />
+            ) : (
+              <EmptyStateCard title="请选择一条知识点总结产物" description="选择左侧产物后，这里会展示对应 Markdown 详情与预览。" />
+            )}
+          </div>
+        </section>
+      </div>
     </div>
   )
 }

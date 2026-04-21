@@ -17,7 +17,7 @@ describe('SettingsUsersPage', () => {
   it('disables refresh for viewer role', async () => {
     renderWithProviders(<SettingsUsersPage />, { user: createUser({ role: 'viewer' }) })
 
-    expect(screen.getByText('普通用户可查看后台信息结构，但用户管理与审计能力保持禁用。')).toBeInTheDocument()
+    expect(screen.getByText('普通用户不展示此管理页内容，相关入口也保持隐藏。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '刷新列表' })).toBeDisabled()
   })
 

@@ -56,6 +56,12 @@ export interface LoginPayload {
   password: string
 }
 
+export interface RegisterPayload {
+  username: string
+  email: string
+  password: string
+}
+
 function normalizeTokens(payload: unknown): AuthTokens {
   const source = payload as Record<string, unknown>
   return {
@@ -87,10 +93,23 @@ export const apiClient = {
       body: body === undefined ? undefined : JSON.stringify(body),
       ...options,
     }),
+  patch: <T>(path: string, body?: unknown, options?: RequestOptions) =>
+    request<T>(path, 'PATCH', {
+      body: body === undefined ? undefined : JSON.stringify(body),
+      ...options,
+    }),
+  delete: <T>(path: string, options?: RequestOptions) => request<T>(path, 'DELETE', options),
   auth: {
     login: async (payload: LoginPayload) => {
       const response = await apiClient.post<{ user?: unknown; tokens?: unknown }>('/auth/login', payload)
       return normalizeTokens(response.tokens ?? response)
+    },
+    register: async (payload: RegisterPayload) => {
+      const response = await apiClient.post<{ user?: unknown; tokens?: unknown }>('/auth/register', payload)
+      return {
+        user: normalizeUser(response.user ?? response),
+        tokens: normalizeTokens(response.tokens ?? response),
+      }
     },
     me: async (token: string) => normalizeUser(await apiClient.get<unknown>('/auth/me', { token })),
     logout: (refreshToken: string, token?: string | null) =>

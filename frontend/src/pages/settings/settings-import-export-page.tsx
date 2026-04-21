@@ -52,7 +52,7 @@ export function SettingsImportExportPage() {
   return (
     <PagePlaceholder
       title="导入导出"
-      description="管理员可触发数据库快照导出与导入恢复。当前前端不会伪造接口成功；若后端未实现，将直接展示失败或不可用状态。"
+      description="管理员可触发数据库导出与导入恢复。接口失败时会直接显示真实状态。"
       className="space-y-4"
       actions={
         <>
@@ -81,7 +81,7 @@ export function SettingsImportExportPage() {
       <ReadonlyNotice isAdmin={isAdmin} reason="普通用户仅可查看导入导出说明与表单结构，导入/导出操作保持禁用。" />
       {message ? <div className="md:col-span-2 xl:col-span-3"><SectionStatus status={message} tone={messageTone} /></div> : null}
 
-      <SettingsSection title="数据库导出" description="导出数据库快照、配置脱敏 JSON 与生成产物索引。" className="md:col-span-2 xl:col-span-2">
+      <SettingsSection title="数据库导出" description="导出数据库快照与配置索引。" className="md:col-span-2 xl:col-span-2">
         <div className="space-y-3 text-sm text-cloth-muted">
           <p>推荐在低峰期执行导出，并将导出包与工作目录文件一同备份。</p>
           <ul className="list-disc space-y-1 pl-5">
@@ -92,11 +92,10 @@ export function SettingsImportExportPage() {
         </div>
       </SettingsSection>
 
-      <SettingsSection title="数据库导入" description="上传导出包后触发恢复/合并流程；前端仅提交文件，不模拟恢复结果。" className="md:col-span-2 xl:col-span-1">
+      <SettingsSection title="数据库导入" description="上传导出包并触发恢复或合并。" className="md:col-span-2 xl:col-span-1">
         <div className="space-y-3">
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-cloth-ink">导入文件</span>
-            <input type="file" className="fabric-input" onChange={handleFileChange} disabled={!isAdmin} />
+          <label className="fabric-upload-surface block">
+            <input type="file" onChange={handleFileChange} disabled={!isAdmin} className="fabric-file-input" />
           </label>
           <div className="rounded-xl border border-dashed border-cloth-line/80 bg-white/35 p-4 text-sm text-cloth-muted">
             {selectedFile ? `已选择：${selectedFile.name}` : '请选择数据库导入包。'}

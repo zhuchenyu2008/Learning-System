@@ -46,7 +46,6 @@ export function NotesOverviewPage() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cloth-accent">Notes Overview</p>
             <h1 className="font-serif text-3xl text-cloth-ink">笔记总览</h1>
-            <p className="mt-2 max-w-3xl text-sm text-cloth-muted">查看工作目录扫描状态、近期生成笔记与任务情况，并快速进入扫描和生成链路。</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <PermissionButton
@@ -67,13 +66,13 @@ export function NotesOverviewPage() {
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatCard title="来源资产" value={isAdmin ? String(sourcesQuery.data?.length ?? 0) : '--'}>
-            {isAdmin ? '已登记的扫描资产总数' : '普通用户不展示后台资产数量'}
+            {isAdmin ? '已登记资产总数' : '普通用户不展示后台资产数量'}
           </StatCard>
           <StatCard title="笔记总数" value={String(notesQuery.data?.length ?? 0)} tone="accent">
-            当前已入库 Markdown 笔记数
+            当前笔记数
           </StatCard>
           <StatCard title="待处理任务" value={isAdmin ? String(stats.pendingJobs) : '--'} tone="warn">
-            {isAdmin ? 'pending / running 任务数量' : '普通用户不展示任务状态'}
+            {isAdmin ? 'pending / running 数量' : '普通用户不展示任务状态'}
           </StatCard>
           <StatCard title="最新更新时间" value={notesQuery.data?.[0] ? formatDate(notesQuery.data[0].updated_at) : '--'} tone="success">
             最近一篇笔记的更新时间

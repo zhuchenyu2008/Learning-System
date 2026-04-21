@@ -2,7 +2,7 @@ from pathlib import Path
 
 from app.models.enums import SourceFileType
 
-TEXT_EXTENSIONS = {".txt", ".md", ".markdown", ".html", ".htm", ".json", ".csv", ".py", ".js", ".ts"}
+TEXT_EXTENSIONS = {".txt", ".md", ".markdown", ".html", ".htm", ".json", ".csv", ".py", ".js", ".ts", ".docx"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}

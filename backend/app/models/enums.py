@@ -48,6 +48,7 @@ class JobType(str, Enum):
     DATABASE_IMPORT = "database_import"
     SUMMARY_GENERATION = "summary_generation"
     MINDMAP_GENERATION = "mindmap_generation"
+    REVIEW_CARD_GENERATION = "review_card_generation"
     SCHEDULED_REVIEW_MAINTENANCE = "scheduled_review_maintenance"
 
 

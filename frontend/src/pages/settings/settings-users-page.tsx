@@ -27,7 +27,7 @@ export function SettingsUsersPage() {
   return (
     <PagePlaceholder
       title="用户与登录情况"
-      description="管理员可查看用户列表、角色状态、登录事件与活动概览；若后端未就绪则以结构化占位降级。"
+      description="管理员可查看用户列表、登录事件与用户活动概览。"
       className="space-y-4"
       actions={
         <PermissionButton
@@ -44,7 +44,7 @@ export function SettingsUsersPage() {
         </PermissionButton>
       }
     >
-      <ReadonlyNotice isAdmin={isAdmin} reason="普通用户可查看后台信息结构，但用户管理与审计能力保持禁用。" />
+      <ReadonlyNotice isAdmin={isAdmin} reason="普通用户不展示此管理页内容，相关入口也保持隐藏。" />
 
       <SettingsSection title="用户列表" description="展示角色、状态、最近登录时间与创建时间。" className="md:col-span-2 xl:col-span-2">
         {usersQuery.error ? (

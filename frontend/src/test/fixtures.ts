@@ -1,12 +1,12 @@
-import type { JobRecord, NoteDetail, NoteSummary, NoteTreeNode, ReviewLogRecord, ReviewOverview, ReviewQueueItem, SourceAsset } from '@/types/notes'
+import type { JobRecord, NoteDetail, NoteSummary, NoteTreeNode, ReviewLogRecord, ReviewOverview, ReviewQueueItem, ReviewSubjectSummary, SourceAsset } from '@/types/notes'
 import type { AdminUserRecord, LoginEventRecord, SchedulerTaskRecord, SettingsAiPayload, SystemSettings, UserActivityRecord } from '@/types/settings'
 
 export const sampleNotes: NoteSummary[] = [
   {
     id: 101,
-    title: 'Mermaid Note',
-    relative_path: 'notes/mermaid-note.md',
-    note_type: 'mindmap',
+    title: 'Source Note',
+    relative_path: 'notes/source-note.md',
+    note_type: 'source_note',
     content_hash: 'hash-101',
     source_asset_id: 11,
     frontmatter_json: {},
@@ -15,9 +15,9 @@ export const sampleNotes: NoteSummary[] = [
   },
   {
     id: 102,
-    title: 'Summary Note',
-    relative_path: 'notes/summary-note.md',
-    note_type: 'summary',
+    title: 'Review Note',
+    relative_path: 'notes/review-note.md',
+    note_type: 'review_note',
     content_hash: 'hash-102',
     source_asset_id: null,
     frontmatter_json: {},
@@ -26,8 +26,33 @@ export const sampleNotes: NoteSummary[] = [
   },
 ]
 
+export const sampleArtifactNotes: NoteSummary[] = [
+  {
+    id: 201,
+    title: 'Mermaid Note',
+    relative_path: 'artifacts/mindmap/mermaid-note.md',
+    note_type: 'mindmap',
+    content_hash: 'hash-201',
+    source_asset_id: 11,
+    frontmatter_json: {},
+    created_at: '2026-04-18T10:00:00Z',
+    updated_at: '2026-04-18T12:00:00Z',
+  },
+  {
+    id: 202,
+    title: 'Summary Note',
+    relative_path: 'artifacts/summary/summary-note.md',
+    note_type: 'summary',
+    content_hash: 'hash-202',
+    source_asset_id: null,
+    frontmatter_json: {},
+    created_at: '2026-04-17T10:00:00Z',
+    updated_at: '2026-04-17T12:00:00Z',
+  },
+]
+
 export const sampleNoteDetail: NoteDetail = {
-  ...sampleNotes[0],
+  ...sampleArtifactNotes[0],
   content: `# Heading\n\n- item 1\n- item 2\n\n| col | value |\n| --- | --- |\n| a | 1 |\n\n<div class="safe-html">allowed html</div>\n<script>alert('blocked')</script>\n\n\`\`\`mermaid\ngraph TD\n  A[Start] --> B[Finish]\n\`\`\``,
 }
 
@@ -39,8 +64,8 @@ export const sampleTree: NoteTreeNode[] = [
     note_id: null,
     children: [
       {
-        name: 'mermaid-note.md',
-        path: 'notes/mermaid-note.md',
+        name: 'source-note.md',
+        path: 'notes/source-note.md',
         is_dir: false,
         note_id: 101,
         children: [],
@@ -89,21 +114,36 @@ export const sampleReviewQueue: ReviewQueueItem[] = [
     card_id: 401,
     due_at: '2026-04-19T08:00:00Z',
     suspended: false,
+    subject: '计算机',
     knowledge_point: {
       id: 501,
       note_id: 101,
       title: 'Event Loop',
-      content_md: 'Explain how the event loop schedules macro and micro tasks.',
+      content_md: 'Explain how the event loop schedules macro and micro tasks.\n\nRecall formula: $T(n)=O(n \\log n)$',
       embedding_vector: null,
       tags_json: { tags: ['javascript', 'runtime'] },
+      subject: '计算机',
       created_at: '2026-04-18T07:00:00Z',
       updated_at: '2026-04-18T07:10:00Z',
     },
     note: {
       id: 101,
-      title: 'Mermaid Note',
-      relative_path: 'notes/mermaid-note.md',
+      title: 'Source Note',
+      relative_path: 'notes/source-note.md',
     },
+  },
+]
+
+export const sampleReviewSubjects: ReviewSubjectSummary[] = [
+  {
+    subject: '计算机',
+    total_cards: 3,
+    due_cards: 2,
+  },
+  {
+    subject: '数学',
+    total_cards: 4,
+    due_cards: 1,
   },
 ]
 

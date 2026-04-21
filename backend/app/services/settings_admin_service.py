@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import UploadFile
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -22,6 +22,17 @@ from app.services.job_service import JobService
 
 
 class SettingsAdminService:
+    @staticmethod
+    def mask_api_key(api_key: str | None) -> str:
+        if not api_key:
+            return ""
+        if len(api_key) <= 8:
+            return "*" * len(api_key)
+        visible_prefix = api_key[:4]
+        visible_suffix = api_key[-4:]
+        masked_length = max(len(api_key) - 8, 4)
+        return f"{visible_prefix}{'*' * masked_length}{visible_suffix}"
+
     @staticmethod
     async def get_or_create_system_setting(session: AsyncSession) -> SystemSetting:
         result = await session.execute(select(SystemSetting).limit(1))
@@ -77,7 +88,15 @@ class SettingsAdminService:
             if item is None:
                 item = AIProviderConfig(provider_type=key, base_url="", api_key_encrypted="", model_name="", extra_json={}, is_enabled=False)
             item.base_url = payload["base_url"]
-            item.api_key_encrypted = payload.get("api_key") or item.api_key_encrypted or ""
+
+            incoming_api_key = payload.get("api_key")
+            if incoming_api_key is not None:
+                normalized_api_key = incoming_api_key.strip()
+                if normalized_api_key:
+                    item.api_key_encrypted = normalized_api_key
+            elif not item.api_key_encrypted:
+                item.api_key_encrypted = ""
+
             item.model_name = payload["model_name"]
             item.extra_json = payload.get("extra_json") or {}
             item.is_enabled = payload["is_enabled"]
@@ -141,30 +160,73 @@ class SettingsAdminService:
         snapshots_result = await session.execute(select(UserActivitySnapshot))
         snapshots = {item.user_id: item for item in snapshots_result.scalars().all()}
 
+        review_aggregate_rows = await session.execute(
+            select(
+                ReviewLog.user_id,
+                func.count(ReviewLog.id),
+                func.coalesce(func.sum(ReviewLog.duration_seconds), 0),
+                func.max(ReviewLog.created_at),
+            ).group_by(ReviewLog.user_id)
+        )
+        review_aggregates = {
+            row[0]: {
+                "review_count": int(row[1] or 0),
+                "review_watch_seconds": int(row[2] or 0),
+                "last_review_at": row[3],
+            }
+            for row in review_aggregate_rows.all()
+        }
+
         output: list[dict] = []
+        snapshots_changed = False
         for user in users:
+            aggregate = review_aggregates.get(
+                user.id,
+                {"review_count": 0, "review_watch_seconds": 0, "last_review_at": None},
+            )
             snapshot = snapshots.get(user.id)
             if snapshot is None:
-                review_count_result = await session.execute(
-                    select(ReviewLog).where(ReviewLog.user_id == user.id)
-                )
-                review_logs = list(review_count_result.scalars().all())
-                total_watch_seconds = sum(item.duration_seconds for item in review_logs)
-                review_count = len(review_logs)
-                last_activity_at = max((item.created_at for item in review_logs), default=user.last_login_at)
-                snapshot = UserActivitySnapshot(
-                    user_id=user.id,
-                    total_watch_seconds=total_watch_seconds,
-                    review_watch_seconds=total_watch_seconds,
-                    review_count=review_count,
-                    page_view_count=0,
-                    note_view_count=0,
-                    last_activity_at=last_activity_at,
-                    last_event_type="review_log" if review_logs else "login",
-                )
+                snapshot = UserActivitySnapshot(user_id=user.id)
                 session.add(snapshot)
-                await session.commit()
-                await session.refresh(snapshot)
+                snapshots[user.id] = snapshot
+                snapshots_changed = True
+
+            historical_review_count = int(aggregate["review_count"] or 0)
+            historical_review_watch_seconds = int(aggregate["review_watch_seconds"] or 0)
+            historical_last_review_at = aggregate["last_review_at"]
+
+            current_review_count = int(snapshot.review_count or 0)
+            current_review_watch_seconds = int(snapshot.review_watch_seconds or 0)
+            current_total_watch_seconds = int(snapshot.total_watch_seconds or 0)
+
+            merged_review_count = max(current_review_count, historical_review_count)
+            merged_review_watch_seconds = max(current_review_watch_seconds, historical_review_watch_seconds)
+            merged_total_watch_seconds = max(current_total_watch_seconds, merged_review_watch_seconds)
+
+            if merged_review_count != current_review_count:
+                snapshot.review_count = merged_review_count
+                snapshots_changed = True
+            if merged_review_watch_seconds != current_review_watch_seconds:
+                snapshot.review_watch_seconds = merged_review_watch_seconds
+                snapshots_changed = True
+            if merged_total_watch_seconds != current_total_watch_seconds:
+                snapshot.total_watch_seconds = merged_total_watch_seconds
+                snapshots_changed = True
+
+            candidate_last_activity = [value for value in (snapshot.last_activity_at, user.last_login_at, historical_last_review_at) if value is not None]
+            merged_last_activity = max(candidate_last_activity) if candidate_last_activity else None
+            if merged_last_activity != snapshot.last_activity_at:
+                snapshot.last_activity_at = merged_last_activity
+                snapshots_changed = True
+
+            if snapshot.last_event_type is None:
+                if merged_last_activity == historical_last_review_at and historical_last_review_at is not None:
+                    snapshot.last_event_type = "review_log"
+                elif user.last_login_at is not None:
+                    snapshot.last_event_type = "login"
+                if snapshot.last_event_type is not None:
+                    snapshots_changed = True
+
             output.append(
                 {
                     "id": snapshot.id,
@@ -180,6 +242,33 @@ class SettingsAdminService:
                     "last_event_type": snapshot.last_event_type,
                 }
             )
+
+        if snapshots_changed:
+            await session.commit()
+            for user in users:
+                snapshot = snapshots.get(user.id)
+                if snapshot is not None:
+                    await session.refresh(snapshot)
+
+        def has_material_activity(item: dict) -> bool:
+            return any(
+                int(item[field] or 0) > 0
+                for field in ("total_watch_seconds", "review_count", "page_view_count", "note_view_count", "review_watch_seconds")
+            )
+
+        output.sort(
+            key=lambda item: (
+                has_material_activity(item),
+                int(item["total_watch_seconds"] or 0),
+                int(item["review_count"] or 0),
+                int(item["page_view_count"] or 0),
+                int(item["note_view_count"] or 0),
+                item["last_seen_at"] is not None,
+                item["last_seen_at"] or datetime.min.replace(tzinfo=timezone.utc),
+                int(item["user_id"] or 0),
+            ),
+            reverse=True,
+        )
         return output
 
     @staticmethod
