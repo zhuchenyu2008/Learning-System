@@ -1,0 +1,58 @@
+:root {
+  color-scheme: light;
+  --background: #f4f0e8;
+  --foreground: #201c18;
+  --muted: #695f52;
+  --accent: #2f6f68;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    Arial,
+    "Microsoft YaHei",
+    sans-serif;
+}
+
+.app-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+}
+
+.intro {
+  max-width: 680px;
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  margin: 0 0 12px;
+}
+
+h1 {
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  line-height: 1.1;
+  margin: 0 0 16px;
+}
+
+p {
+  color: var(--muted);
+  font-size: 1.125rem;
+  line-height: 1.7;
+  margin: 0;
+}
