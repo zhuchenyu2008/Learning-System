@@ -105,13 +105,13 @@ Suggested tokens:
 - Primary text: ink `#24211C`
 - Secondary text: muted graphite `#696256`
 - Border/stitch: flax thread `#D8CCB8`
-- Primary accent: indigo thread `#355C7D`
+- Primary accent: walnut-brown thread `#7A4F2B`
 - Secondary accent: moss `#6E7F5E`
 - Warning: ochre `#B7791F`
 - Danger: muted red `#B75D55`
 - Success: sage `#5F8A70`
 
-Avoid a one-note beige interface. Balance the warm woven base with ink, indigo, sage, and muted red.
+Avoid a one-note beige interface. Balance the warm woven base with ink, walnut-brown, sage, ochre, and muted red.
 
 ### Typography
 
@@ -144,7 +144,7 @@ Suggested hierarchy:
 Primary button:
 
 - Cloth-label style.
-- Indigo background or indigo border.
+- Walnut-brown background or walnut-brown border.
 - Clear icon + text when the action is important.
 
 Secondary button:
@@ -289,11 +289,12 @@ Purpose: browse, filter, read, and manage notes.
 Layout:
 
 - Page title: `笔记库`
-- Filter row: subject, tag, date, type, status.
-- Search input.
-- Notes table or list.
-- Selected note opens in main reading area or detail page.
-- Metadata and source citations open in drawer.
+- Filter row: search, subject, type, index state, export state.
+- Compact subject/type file tree.
+- Selected note opens in the main reading area.
+- Metadata, edit, delete, rebuild index, and re-export controls sit above the note body.
+- Source citations and related content open in drawer or below the reading area.
+- Notes do not have draft/published states.
 
 Admin actions:
 
@@ -321,12 +322,11 @@ Purpose: ask questions against the note knowledge base with citations.
 Layout:
 
 - Page title: `RAG 问答`
-- Question composer.
-- Optional filters: subject, content type.
-- Answer stream area.
-- Citation list below answer.
-- Retrieved chunks open in drawer.
-- Question history.
+- ChatGPT-like conversation workspace.
+- Central message transcript with the AI answer and citations attached below the assistant message.
+- Sticky bottom composer with question input and optional filters: subject, content type, date range.
+- Retrieved chunks and citations open in drawer.
+- Question history is secondary and should not dominate the workspace.
 
 Interaction:
 
@@ -370,7 +370,8 @@ Layout:
 - Answer input.
 - Submit answer button.
 - AI feedback section after submission.
-- Rating controls: Again, Hard, Good, Easy.
+- AI suggests Again, Hard, Good, or Easy from the submitted answer.
+- User controls are limited to confirming the AI score or answering again.
 - Next due time preview.
 - Bad-card feedback action.
 
@@ -394,9 +395,9 @@ Purpose: view and generate knowledge summaries.
 Layout:
 
 - Page title: `知识点总结`
-- Summary list with filters.
-- Markdown summary viewer.
-- Admin generation controls: select notes, source range, optional prompt.
+- Two modes: 查看 and 生成.
+- 查看 uses a compact file tree and Markdown summary viewer.
+- 生成 lets admins check source notes, set title/subject/options, and submit an async generation job.
 - Generation progress band.
 
 User:
@@ -413,11 +414,10 @@ Purpose: view and generate interactive mind maps.
 Layout:
 
 - Page title: `思维导图`
-- Mind map list.
-- Main Markmap canvas.
-- Toggle for Mermaid-compatible source.
-- Source scope drawer.
-- Admin generation controls.
+- Two modes: 查看 and 生成.
+- 查看 uses a compact file tree and the main Markmap canvas.
+- 生成 mirrors knowledge summaries: admins check source notes, set depth/options, and submit an async generation job.
+- Mermaid-compatible source remains available for export.
 
 Visual:
 
@@ -604,7 +604,7 @@ Build an actual app workspace, not a landing page.
 
 Use a fixed desktop shell with a 248px left tree sidebar and one single main workspace. The sidebar has three expandable modules: 学习, 复习, 设置. 学习 contains 总览, 笔记生成, 笔记库, RAG 问答. 复习 contains 总览, 复习, 知识点总结, 思维导图生成. 设置 contains AI 配置, Obsidian 配置, 用户与权限, 数据导入导出, 任务与系统日志.
 
-Visual style: warm woven material, light linen background, soft canvas surfaces, stitched dividers, high-contrast ink typography, indigo thread as the primary accent, sage and muted red for semantic states. Keep the UI calm, dense, readable, and product-focused. Avoid marketing hero sections, dashboard card mosaics, nested cards, bright gradients, and three-column workbench layouts.
+Visual style: warm woven material, light linen background, soft canvas surfaces, stitched dividers, high-contrast ink typography, walnut-brown thread as the primary accent, sage, ochre, and muted red for semantic states. Keep the UI calm, dense, readable, and product-focused. Avoid marketing hero sections, dashboard card mosaics, nested cards, bright gradients, and three-column workbench layouts.
 
 Design the key screens: 学习总览, 笔记生成, 笔记库, RAG 问答, 复习总览, 复习, 知识点总结, 思维导图, AI 配置, Obsidian 配置, 用户与权限, 数据导入导出, 任务与系统日志.
 

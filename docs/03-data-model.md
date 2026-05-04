@@ -158,7 +158,6 @@ OCR 可复用多模态模型配置，但如果启用图片/PDF 扫描工作流�
 - `ai_title`
 - `title`
 - `markdown`
-- `status`: `draft`、`organized`、`reviewed`
 - `source_summary`
 - `created_by`
 - `updated_by`
@@ -167,6 +166,8 @@ OCR 可复用多模态模型配置，但如果启用图片/PDF 扫描工作流�
 - `export_status`
 - `export_path`
 - `exported_at`
+
+笔记本身不区分草稿、发布或已整理状态。编辑、索引、导出等进度由任务和导出/索引字段表达，避免在阅读界面制造额外状态。
 
 ### note_sources
 
