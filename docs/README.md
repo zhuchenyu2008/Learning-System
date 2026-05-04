@@ -29,10 +29,10 @@
 
 ### 页面文档
 
-- [笔记 - 总览](pages/notes-overview.md)
-- [笔记 - 笔记生成](pages/notes-generation.md)
-- [笔记 - RAG 问答](pages/notes-rag-qa.md)
-- [笔记 - 笔记库](pages/notes-library.md)
+- [学习 - 总览](pages/notes-overview.md)
+- [学习 - 笔记生成](pages/notes-generation.md)
+- [学习 - RAG 问答](pages/notes-rag-qa.md)
+- [学习 - 笔记库](pages/notes-library.md)
 - [复习 - 总览](pages/review-overview.md)
 - [复习 - 复习](pages/review-session.md)
 - [复习 - 知识点总结](pages/review-knowledge-summary.md)
@@ -51,4 +51,3 @@
 - 上传源文件不放入自动导出目录。
 - AI 配置由管理员在设置页填写，文档和示例文件不得提交真实 API key。
 - 普通用户只负责观看、问答、复习和写入复习日志；管理员负责上传、生成、编辑、删除、配置和用户管理。
-
