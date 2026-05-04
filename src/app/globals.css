@@ -56,3 +56,28 @@ p {
   line-height: 1.7;
   margin: 0;
 }
+
+.status-list {
+  display: grid;
+  gap: 12px;
+  margin: 28px 0 0;
+}
+
+.status-list div {
+  border: 1px solid rgb(32 28 24 / 12%);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.status-list dt {
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin: 0 0 4px;
+}
+
+.status-list dd {
+  color: var(--foreground);
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+}
