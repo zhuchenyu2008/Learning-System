@@ -26,23 +26,39 @@ export type StorageConfigStatus = {
   validation: StorageValidationResult;
 };
 
-type KnowledgeBaseEnvironment = Partial<Record<KnowledgeBaseEnvKey, string | undefined>>;
+export type ConfiguredKnowledgeBaseDirectory =
+  | {
+      configured: true;
+      source: KnowledgeBaseEnvKey;
+      rootPath: string;
+      validation: StorageValidationResult & {
+        ok: true;
+      };
+    }
+  | {
+      configured: boolean;
+      source: KnowledgeBaseEnvKey | null;
+      rootPath: null;
+      validation: StorageValidationResult;
+    };
 
-type FileSystemAdapter = {
+export type KnowledgeBaseEnvironment = Partial<Record<KnowledgeBaseEnvKey, string | undefined>>;
+
+export type StorageFileSystemAdapter = {
   stat: (inputPath: string) => Promise<DirectoryStats>;
   access: (inputPath: string, mode?: number) => Promise<void>;
 };
 
 type StorageConfigOptions = {
   env?: KnowledgeBaseEnvironment;
-  fs?: FileSystemAdapter;
+  fs?: StorageFileSystemAdapter;
 };
 
 type DirectoryStats = {
   isDirectory: () => boolean;
 };
 
-const defaultFileSystem: FileSystemAdapter = {
+const defaultFileSystem: StorageFileSystemAdapter = {
   stat,
   access
 };
@@ -50,15 +66,39 @@ const defaultFileSystem: FileSystemAdapter = {
 export async function getStorageConfigStatus(
   options: StorageConfigOptions = {}
 ): Promise<StorageConfigStatus> {
+  const configuredDirectory = await getConfiguredKnowledgeBaseDirectory(options);
+
+  return {
+    configured: configuredDirectory.configured,
+    source: configuredDirectory.source,
+    validation: configuredDirectory.validation
+  };
+}
+
+export async function getConfiguredKnowledgeBaseDirectory(
+  options: StorageConfigOptions = {}
+): Promise<ConfiguredKnowledgeBaseDirectory> {
   const env = options.env ?? getProcessKnowledgeBaseEnvironment();
   const configuredPath = getConfiguredKnowledgeBasePath(env);
   const validation = await validateKnowledgeBaseDirectory(configuredPath.value, {
     fs: options.fs
   });
 
+  if (configuredPath.value && configuredPath.source && validation.ok) {
+    return {
+      configured: true,
+      source: configuredPath.source,
+      rootPath: configuredPath.value,
+      validation: validation as StorageValidationResult & {
+        ok: true;
+      }
+    };
+  }
+
   return {
     configured: configuredPath.value !== null,
     source: configuredPath.source,
+    rootPath: null,
     validation
   };
 }

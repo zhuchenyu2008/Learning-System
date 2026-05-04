@@ -2,7 +2,7 @@
 
 Learning-System 是一个从课堂资料到笔记、RAG 问答、FSRS 复习、知识点总结、思维导图和 Obsidian 导出的学习闭环系统。
 
-当前阶段已创建单包 Next.js App Router 基础工程，并接入 PostgreSQL + Drizzle ORM 数据库基础设施。第二阶段增加了服务器本地 Markdown 知识库根目录的环境变量读取、目录安全校验、只读配置状态 API、只校验不保存 API，以及最小设置页占位。当前仍不包含数据库业务 CRUD、AI/RAG、完整权限 UI、Docker Compose、文件扫描或 Markdown 处理。
+当前阶段已创建单包 Next.js App Router 基础工程，并接入 PostgreSQL + Drizzle ORM 数据库基础设施。第二阶段增加了服务器本地 Markdown 知识库根目录的环境变量读取、目录安全校验、只读配置状态 API、只校验不保存 API，以及最小设置页占位。第三阶段增加了 Markdown 文件扫描 dry-run，只返回安全文件元信息。当前仍不包含数据库业务 CRUD、AI/RAG、完整权限 UI、Docker Compose、Markdown 正文渲染或文件写入。
 
 ## 文档
 
@@ -75,6 +75,46 @@ VAULT_ROOT=/path/to/markdown-vault
 - 当前进程必须有读取权限。
 - 不向前端返回绝对路径或底层错误详情。
 
+## Markdown 文件扫描 dry-run
+
+第三阶段支持基于已配置且校验通过的知识库根目录只读扫描 Markdown 文件：
+
+- `GET /api/notes`：扫描当前配置目录，返回 Markdown 文件元信息。
+- `/notes`：最小 dry-run 页面，展示标题、相对路径、文件大小和更新时间。
+
+接口返回示例：
+
+```json
+{
+  "configured": true,
+  "ok": true,
+  "count": 1,
+  "notes": [
+    {
+      "id": "d1f2c3...",
+      "title": "课堂笔记",
+      "relativePath": "math/algebra.md",
+      "extension": ".md",
+      "sizeBytes": 1024,
+      "updatedAt": "2026-05-04T00:00:00.000Z",
+      "depth": 1
+    }
+  ],
+  "truncated": false
+}
+```
+
+扫描限制：
+
+- API 调用者不能传入任意扫描根目录，只使用服务器当前配置。
+- 支持 `.md` 和 `.markdown`，大小写不敏感。
+- 只读取文件开头最多 64KB 用于提取第一个一级标题。
+- 没有一级标题时使用文件名作为标题。
+- 不返回服务器绝对路径或 Markdown 完整正文。
+- 默认不跟随软链接。
+- 跳过 `node_modules`、`.git`、`.next`、`dist`、`build`。
+- 默认最多返回 1000 个文件，最大扫描深度为 10。
+
 ## 本地启动
 
 ```bash
@@ -88,6 +128,8 @@ npm run dev
 - 数据库健康检查：<http://localhost:3000/api/health/db>
 - 本地知识库目录设置占位页：<http://localhost:3000/settings/storage>
 - 本地知识库目录状态：<http://localhost:3000/api/settings/storage>
+- Markdown 扫描 dry-run 页面：<http://localhost:3000/notes>
+- Markdown 扫描 dry-run API：<http://localhost:3000/api/notes>
 
 基础健康检查只返回安全字段，不连接数据库或 Redis。数据库健康检查只执行数据库连接检查：连接成功返回 200，失败或缺少 `DATABASE_URL` 返回 503；响应不会返回连接串、用户名、密码、host、绝对路径、错误堆栈或完整数据库错误对象。
 
@@ -106,7 +148,7 @@ npm run build
 
 - 不实现业务页面。
 - 不实现 AI/RAG。
-- 只实现数据库基础设施和本地知识库目录只读校验，不实现业务 CRUD。
+- 只实现数据库基础设施、本地知识库目录只读校验和 Markdown 文件元信息 dry-run，不实现业务 CRUD。
 - 不实现登录、注册、权限 UI、Redis、BullMQ、Docker Compose。
-- 不实现文件扫描、Markdown 处理或用户文件写入。
+- 不实现 Markdown 正文渲染、文件内容入库、AI/RAG、文件写入或用户文件修改。
 - `src/worker/` 和 `src/scheduler/` 仅为占位骨架。

@@ -81,3 +81,99 @@ p {
   font-weight: 700;
   margin: 0;
 }
+
+.notes-shell {
+  margin: 0 auto;
+  max-width: 1180px;
+  min-height: 100vh;
+  padding: 40px 24px;
+}
+
+.notes-header {
+  margin: 0 0 28px;
+  max-width: 760px;
+}
+
+.notes-panel {
+  background: rgb(255 255 255 / 36%);
+  border: 1px solid rgb(32 28 24 / 12%);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.notes-panel h2 {
+  font-size: 1.25rem;
+  line-height: 1.3;
+  margin: 0 0 8px;
+}
+
+.notes-panel-error {
+  border-color: rgb(138 70 55 / 36%);
+}
+
+.notes-summary {
+  align-items: baseline;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin: 0 0 16px;
+}
+
+.notes-summary h2 {
+  margin: 0;
+}
+
+.notes-summary p {
+  font-size: 0.95rem;
+}
+
+.notes-table-wrap {
+  overflow-x: auto;
+}
+
+.notes-table {
+  border-collapse: collapse;
+  min-width: 760px;
+  width: 100%;
+}
+
+.notes-table th,
+.notes-table td {
+  border-bottom: 1px solid rgb(32 28 24 / 10%);
+  padding: 12px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.notes-table th {
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.notes-table td {
+  color: var(--foreground);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.notes-table td:nth-child(2) {
+  color: var(--muted);
+  font-family:
+    Consolas,
+    "Liberation Mono",
+    monospace;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .notes-shell {
+    padding: 28px 16px;
+  }
+
+  .notes-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}
